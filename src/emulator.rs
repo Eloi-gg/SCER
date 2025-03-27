@@ -1,5 +1,4 @@
 pub struct Emulator {
-    // Screen is 16x16 ascii characters
     screen: String,
     screen_modified: bool,
     text: Vec<u8>,
@@ -36,7 +35,6 @@ impl Emulator {
                 let mut screen_line = String::from("║  ");
                 for i in 0..self.screen_width {
                     let c = text_line[i as usize] as char;
-                    println!("{}: '{}'", i, c);
                     screen_line.push(c);
                 }
                 screen_line.push_str("  ║");
@@ -96,3 +94,4 @@ impl Emulator {
         }
     }
 }
+
