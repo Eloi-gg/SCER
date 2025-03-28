@@ -1,13 +1,16 @@
 use std::env;
 use std::io::Read;
 
+use machine::Machine;
+
 mod emulator;
+mod machine;
 mod program;
 mod utils;
-mod machine;
 
 fn display_logo() {
-    println!("
+    println!(
+        "
 
        ▐▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▌              
        ▐        ███████╗ ██████╗███████╗██████╗         ▌
@@ -25,7 +28,8 @@ fn display_logo() {
     ░█▀▀░█░█░█░█░█░░░█▀█░░█░░█▀▀░█░█░░░░█░░█░█░░░█▀▄░█░█░▀▀█░░█░
     ░▀▀▀░▀░▀░▀▀▀░▀▀▀░▀░▀░░▀░░▀▀▀░▀▀░░░░▀▀▀░▀░▀░░░▀░▀░▀▀▀░▀▀▀░░▀░
     
-    ");
+    "
+    );
 }
 
 fn load_args() -> (String, bool) {
@@ -44,7 +48,6 @@ fn load_args() -> (String, bool) {
         std::process::exit(1);
     }
 
-
     if debug_mode {
         println!("Debug mode is enabled.");
         (file_path.to_string(), true)
@@ -54,7 +57,9 @@ fn load_args() -> (String, bool) {
     }
 }
 
-
+fn clr() {
+    print!("\x1B[2J\x1B[1;1H");
+}
 
 fn main() {
     display_logo();
@@ -64,13 +69,29 @@ fn main() {
     let program = program::ScarProgram::compile(&file_data).unwrap();
 
     println!("Program: {}\nPress enter to start...", program_name);
-    let _ = std::io::stdin().read(&mut [0u8]).unwrap();
+    let mut buffer = [0u8; 8];
+    let _ = std::io::stdin().read(&mut buffer).unwrap();
+    clr();
 
     let mut emulator = emulator::Emulator::new(16, 2);
+    let mut machine = Machine::new();
     emulator.clear_screen();
     print!("{}\n", emulator.screen());
-    emulator.set_char(0, 0, 'E');
-    print!("{}\n", emulator.screen());
+    print!("{}", machine.get_state());
+
+    // TODO : hook display
+
+    if debug_mode {
+        for _ in 0..10 {
+            let kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
+            machine.step();
+            clr();
+            // TODO: update display
+            print!("{}\n", emulator.screen());
+            print!("{}", machine.get_state());
+        }
+    }
+    println!();
 
     // Add your logic to process the .sp file here
 }
