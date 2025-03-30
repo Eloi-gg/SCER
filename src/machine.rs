@@ -1,9 +1,13 @@
 pub struct Machine {
     // registers
-    r0: u16,
-    r1: u16,
-    r2: u16,
-    r3: u16,
+    r0: u16, // general purpose, arg0
+    r1: u16, // general purpose, arg1
+    r2: u16, // general purpose, arg2
+    a0: u16, // general purpose
+    a1: u16, // general purpose
+    a2: u16, // general purpose
+    z: u16,  // return value, link register
+    f: u16,  // flags
 
     // special registers
     pc: u16,
@@ -39,9 +43,15 @@ impl Machine {
             r0: 0,
             r1: 0,
             r2: 0,
-            r3: 0,
+            a0: 0,
+            a1: 0,
+            a2: 0,
+            z: 0,
+            f: 0,
+
             pc: 0,
             sp: 0,
+
             memory: [0; 0x10000],
         }
     }
@@ -54,8 +64,8 @@ impl Machine {
 
     pub fn get_state(&self) -> String {
         format!(
-            "r0: {:#X}\nr1: {:#X}\nr2: {:#X}\nr3: {:#X}\npc: {:#X}\nsp: {:#X}",
-            self.r0, self.r1, self.r2, self.r3, self.pc, self.sp
+            "r0: {:#X}\nr1: {:#X}\nr2: {:#X}\npc: {:#X}\nsp: {:#X}",
+            self.r0, self.r1, self.r2, self.pc, self.sp
         )
     }
 
@@ -67,5 +77,39 @@ impl Machine {
 
     pub fn step(&mut self) {
         self.pc += 1;
+    }
+
+    fn memory(&self) -> *const u8 {
+        self.memory.as_ptr()
+    }
+}
+
+#[cfg(test)]
+mod programs {
+    use crate::machine::Machine;
+    use crate::program::ScarProgram;
+
+    const TEST_END_ADDRESS: u16 = 0xFFFF;
+
+    fn wait_for_test_end(machine: &mut Machine) -> bool {
+        unsafe {
+            let test_end_addr = machine.memory().add(TEST_END_ADDRESS as usize);
+            for _ in 0..10000{
+                machine.step();
+                if *test_end_addr != 0 {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    #[test]
+    fn fibonacci() {
+        let mut machine = Machine::new();
+        let instructions = std::fs::read_to_string("./programs/fibonacci.sp").unwrap();
+        let program = ScarProgram::compile(&instructions).unwrap();
+        machine.load(&program);
+        assert!(wait_for_test_end(&mut machine));
     }
 }
