@@ -13,6 +13,10 @@
 # ....
 # 0xFFFF = set to high to indicate test end
 
+!input_address 0xF000
+!output_address 0xF002
+!test_end_address 0xFFFF
+
 @start
 mov $a1 0xF002
 lw $a2 0xF000

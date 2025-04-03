@@ -108,7 +108,7 @@ mod programs {
     fn fibonacci() {
         let mut machine = Machine::new();
         let instructions = std::fs::read_to_string("./programs/fibonacci.sp").unwrap();
-        let program = ScarProgram::compile(&instructions).unwrap();
+        let program = ScarProgram::compile(instructions).unwrap();
         machine.load(&program);
         assert!(wait_for_test_end(&mut machine));
     }

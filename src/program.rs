@@ -1,10 +1,12 @@
+use std::{collections::HashMap, hash::Hash};
+
 pub(crate) struct ScarProgram {
     instructions: Vec<Instruction>,
 }
 
 /// Instruction format (24 bits):
 /// Arithmetic operations:
-///     [op - 4 bits][type = 1][reg_d - 3 bits][reg_a - 3 bits][flag_enable - 1 bit][imm - 16 bits]
+///     [op - 4 bits][type = 1][reg_d - 3 bits][reg_a - 3 bits][flag_enable - 1 bit][imm - 8 bits]
 ///     [op - 4 bits][type = 0][reg_d - 3 bits][reg_a - 3 bits][reg_b - 3 bits][flag_enable - 1 bit][todo]
 /// Comparison operations:
 ///    [op - 4 bits][type = 1][reg_a - 3 bits][imm - 16 bits]
@@ -16,7 +18,8 @@ pub(crate) struct ScarProgram {
 ///     [op - 4 bits][imm - 16 bits]
 ///
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[repr(u8)]
 enum Register {
     R0,
     R1,
@@ -61,7 +64,7 @@ enum ArithmeticOp {
     Immediate {
         dest: Register,
         reg_a: Register,
-        imm: u16,
+        imm: u8,
     },
     Register {
         dest: Register,
@@ -82,13 +85,36 @@ impl ArithmeticOp {
             Ok(reg_b) => Ok(ArithmeticOp::Register { dest, reg_a, reg_b }),
             Err(e) => match e {
                 ParsingError::IsNotRegister(_) => match try_immediate(parts[2]) {
-                    Ok(imm) => Ok(ArithmeticOp::Immediate { dest, reg_a, imm }),
+                    Ok(imm) => Ok(ArithmeticOp::Immediate { dest, reg_a, imm: imm as u8 }),
                     Err(_) => Err(ParsingError::InvalidInstruction),
                 },
                 _ => Err(e),
             },
         };
     }
+
+    fn to_binary(&self) -> u32 {
+        match self {
+            ArithmeticOp::Immediate { dest, reg_a, imm } => {
+                return 1u32 << 19 | // type = 1
+                    (*dest as u32) << 16 |
+                    (*reg_a as u32) << 13 |
+                    (*imm as u32) << 5;
+            }
+            ArithmeticOp::Register { dest, reg_a, reg_b } => {
+                return 0u32 << 19 | // type = 0
+                    (*dest as u32) << 16 |
+                    (*reg_a as u32) << 13 |
+                    (*reg_b as u32) << 10;
+            },
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum TwoArgsOp {
+    Immediate(Register, u16),
+    Register(Register, Register),
 }
 
 impl TwoArgsOp {
@@ -109,18 +135,42 @@ impl TwoArgsOp {
             },
         };
     }
-}
 
-#[derive(Debug, PartialEq)]
-enum TwoArgsOp {
-    Immediate(Register, u16),
-    Register(Register, Register),
+    fn to_binary(&self) -> u32 {
+        match self {
+            TwoArgsOp::Immediate(reg_a, imm) => {
+                return 1u32 << 19 | // type = 1
+                    (*reg_a as u32) << 16 |
+                    (*imm as u32) << 5;
+            }
+            TwoArgsOp::Register(reg_a, reg_b) => {
+                return 0u32 << 19 | // type = 0
+                    (*reg_a as u32) << 16 |
+                    (*reg_b as u32) << 13;
+            },
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
 enum OtherOp {
     Immediate(u16),
     Register(Register),
+}
+
+impl OtherOp {
+    fn to_binary(&self) -> u32 {
+        match self {
+            OtherOp::Immediate(imm) => {
+                return 1u32 << 19 | // type = 1
+                    (*imm as u32) << 5;
+            }
+            OtherOp::Register(reg) => {
+                return 0u32 << 19 | // type = 0
+                    (*reg as u32) << 16;
+            },
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -130,6 +180,7 @@ pub enum ParsingError {
     InvalidInstruction,
     TooManyArguments,
     InvalidRegister,
+    LabelDuplicate(String),
     UnknownInstruction(String),
 }
 
@@ -207,9 +258,9 @@ impl Instruction {
                         } else {
                             Err(e)
                         }
-                    },
+                    }
                     _ => Err(e),
-                }
+                },
             }?;
 
             return match op {
@@ -267,13 +318,117 @@ impl Instruction {
         Err(ParsingError::UnknownInstruction(op.to_owned()))
     }
 
-    fn to_binary(&self, buffer: &mut [u8]) {}
+    fn to_binary(&self, buffer: &mut [u8]) {
+        let mut instruction = 0u32;
+        use Instruction::*;
+
+        match self {
+            Add(op) => instruction = 0x0 << 20 | op.to_binary(),
+            Sub(op) => instruction = 0x1 << 20 | op.to_binary(),
+            And(op) => instruction = 0x2 << 20 | op.to_binary(),
+            Or(op) => instruction = 0x3 << 20 | op.to_binary(),
+            Xor(op) => instruction = 0x4 << 20 | op.to_binary(),
+            Asl(op) => instruction = 0x5 << 20 | op.to_binary(),
+            Asr(op) => instruction = 0x6 << 20 | op.to_binary(),
+            Cmp(op) => instruction = 0x7 << 20 | op.to_binary(),
+            Push(op) => instruction = 0x8 << 20 | op.to_binary(),
+            Pop(reg) => instruction = 0x9 << 20 | (*reg as u32) << 16,
+            Lw(op) => instruction = 0xA << 20 | op.to_binary(),
+            Sw(op) => instruction = 0xB << 20 | op.to_binary(),
+            Mov(reg, imm) => {
+                instruction = (*reg as u32) << 16;
+                instruction |= *imm as u32;
+            }
+            Jeq(op) => instruction = 0xC << 20 | op.to_binary(),
+            Jlt(op) => instruction = 0xD << 20 | op.to_binary(),
+        };
+
+        buffer[0] = (instruction >> 16) as u8;
+        buffer[1] = (instruction >> 8) as u8;
+        buffer[2] = instruction as u8;
+    }
 }
 
 impl ScarProgram {
-    pub fn compile(code: &str) -> Result<Vec<u8>, ParsingError> {
-        let mut out = Vec::new();
+    fn preprocessor(code: &mut String) -> Result<(), ParsingError> {
+        let mut ranges = Vec::new();
 
+        // Replace every define with its value
+        let mut defines = HashMap::new();
+        for line in code.lines() {
+            if line.starts_with('!') {
+                let parts: Vec<&str> = line[1..].split_whitespace().collect();
+                if parts.len() != 2 {
+                    return Err(ParsingError::InvalidInstruction);
+                }
+                let key = parts[0].to_owned();
+                let value = parts[1].to_owned();
+                defines.insert(key, value);
+
+                // Remove the line from the code
+                let line_start = code.find(line).unwrap();
+                let line_end = line_start + line.len();
+                ranges.push((line_start, line_end));
+            }
+        }
+
+        for range in ranges.iter().rev() {
+            code.replace_range(range.0..range.1, "");
+        }
+        ranges.clear();
+
+        // Replace defines with their values
+        for (key, value) in defines {
+            *code = code.replace(&key, &value);
+        }
+
+        *code = code
+            .lines()
+            .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        for range in ranges.iter().rev() {
+            code.replace_range(range.0..range.1, "");
+        }
+        ranges.clear();
+
+        let mut label_addresses = HashMap::new();
+        let mut instruction_number: u16 = 0;
+        // Labels
+        for (line_num, line) in code.lines().enumerate() {
+            if line.starts_with('@') {
+                let label = line[1..]
+                    .split_ascii_whitespace()
+                    .next()
+                    .unwrap()
+                    .to_owned();
+                if label_addresses.contains_key(&label) {
+                    return Err(ParsingError::LabelDuplicate(label));
+                }
+                label_addresses.insert(label, instruction_number);
+                let line_start = code.find(line).unwrap();
+                let line_end = line_start + line.len();
+                ranges.push((line_start, line_end));
+            } else {
+                instruction_number += 1;
+            }
+        }
+        for range in ranges.iter().rev() {
+            code.replace_range(range.0..range.1, "");
+        }
+
+        // Replace labels with their addresses
+        for (label, line) in label_addresses {
+            *code = code.replace(&label, &line.to_string());
+        }
+
+        Ok(())
+    }
+
+    pub fn compile(mut code: String) -> Result<Vec<u8>, ParsingError> {
+        let mut out = Vec::new();
+        Self::preprocessor(&mut code)?;
         let mut buffer = [0u8; 3]; // 24bits per instruction
         for line in code.lines() {
             let instruction = Instruction::parse(line)?;
@@ -300,7 +455,9 @@ mod compilation {
     }
 
     fn parse_instructions(code: &str) -> Vec<Instruction> {
+        let mut code = code.to_owned();
         let mut parsed_instructions = Vec::new();
+        compilation::ScarProgram::preprocessor(&mut code).unwrap();
         for line in code.lines() {
             //
             match Instruction::parse(line) {
@@ -319,14 +476,14 @@ mod compilation {
         let code = "add $a0 $r1 1
 sub $a1 $r0 255 # comment
 and $a2 $a2 0xFF # comment b
-or $r0 $f 12345
-xor $r1 $a2 0xFFFF
+or $r0 $f 123
+xor $r1 $a2 0xFF
 asl $r2 $a0 1
 asr $z $z 4
 # comment c
 ";
 
-        let mut parsed_instructions = parse_instructions(&code);
+        let parsed_instructions = parse_instructions(&code);
         let mut expected_instructions = Vec::new();
 
         expected_instructions.push(Instruction::Add(ArithmeticOp::Immediate {
@@ -347,12 +504,12 @@ asr $z $z 4
         expected_instructions.push(Instruction::Or(ArithmeticOp::Immediate {
             dest: Register::R0,
             reg_a: Register::F,
-            imm: 12345,
+            imm: 123,
         }));
         expected_instructions.push(Instruction::Xor(ArithmeticOp::Immediate {
             dest: Register::R1,
             reg_a: Register::A2,
-            imm: 0xFFFF,
+            imm: 0xFF,
         }));
         expected_instructions.push(Instruction::Asl(ArithmeticOp::Immediate {
             dest: Register::R2,
@@ -383,7 +540,7 @@ xor $r1 $a2 $r0
 asl $r2 $a0 $r1
 asr $z $z $r2";
 
-        let mut parsed_instructions = parse_instructions(&code);
+        let parsed_instructions = parse_instructions(&code);
         let mut expected_instructions = Vec::new();
 
         expected_instructions.push(Instruction::Add(ArithmeticOp::Register {
@@ -440,7 +597,7 @@ cmp $a2 0xFF # comment b
 cmp $r1 $r2 # register register
 cmp $a0 $a0 # same register";
 
-        let mut parsed_instructions = parse_instructions(&code);
+        let parsed_instructions = parse_instructions(&code);
         let mut expected_instructions = Vec::new();
 
         expected_instructions.push(Instruction::Cmp(TwoArgsOp::Immediate(Register::R1, 1)));
@@ -470,7 +627,7 @@ push 255 # immediate
 push 0xFF # comment b
 pop $r2 # register";
 
-        let mut parsed_instructions = parse_instructions(&code);
+        let parsed_instructions = parse_instructions(&code);
         let mut expected_instructions = Vec::new();
 
         expected_instructions.push(Instruction::Push(OtherOp::Register(Register::R1)));
@@ -495,7 +652,7 @@ sw $r0 0x0255 # immediate
 sw $a0 $a0 # same register
 ";
 
-        let mut parsed_instructions = parse_instructions(&code);
+        let parsed_instructions = parse_instructions(&code);
         let mut expected_instructions = Vec::new();
 
         expected_instructions.push(Instruction::Lw(TwoArgsOp::Immediate(Register::R1, 1)));
@@ -523,7 +680,7 @@ sw $a0 $a0 # same register
         let code = "mov $r1 1
 mov $z 0x1234 # immediate";
 
-        let mut parsed_instructions = parse_instructions(&code);
+        let parsed_instructions = parse_instructions(&code);
         let mut expected_instructions = Vec::new();
 
         expected_instructions.push(Instruction::Mov(Register::R1, 1));
@@ -545,7 +702,7 @@ jeq $r2 # register
 jlt 0x0255 # immediate
 jlt $a0 # same register
 ";
-        let mut parsed_instructions = parse_instructions(&code);
+        let parsed_instructions = parse_instructions(&code);
         let mut expected_instructions = Vec::new();
 
         expected_instructions.push(Instruction::Jeq(OtherOp::Immediate(1)));
@@ -562,13 +719,102 @@ jlt $a0 # same register
         }
     }
 
+    #[test]
+    fn defines() {
+        let code = "
+!input_address 0xF0
+!output_address 0xF002
+!test_end_address 0xFFFF
+!out_register $r0
+
+add $r0 $r1 input_address
+sub out_register out_register 255
+        ";
+
+        let parsed_instructions = parse_instructions(&code);
+        let mut expected_instructions = Vec::new();
+
+        expected_instructions.push(Instruction::Add(ArithmeticOp::Immediate {
+            dest: Register::R0,
+            reg_a: Register::R1,
+            imm: 0xF0,
+        }));
+        expected_instructions.push(Instruction::Sub(ArithmeticOp::Immediate {
+            dest: Register::R0,
+            reg_a: Register::R0,
+            imm: 255,
+        }));
+
+        assert_sequence(&parsed_instructions, &expected_instructions);
+
+        println!("{}\n", code);
+        for instruction in parsed_instructions.iter() {
+            println!("{:?}", instruction);
+        }
+    }
 
     #[test]
-    fn defines() {}
+    fn labels() {
+        let code = "
+@start
+add $r0 $r1 1 # addr 0
+
+@loop
+
+add $r0 $r1 2 # addr 1
+
+sub $r0 $r1 3 # addr 2
+@end
+
+# @start => addr 0
+# @loop => addr 1
+# @end => addr 3
+add $r0 $r1 2 # addr 3
+
+jeq loop
+jlt start
+jeq end
+";
+        let mut prepprocessed_code = code.to_owned();
+        compilation::ScarProgram::preprocessor(&mut prepprocessed_code).unwrap();
+        println!("{}", prepprocessed_code);
+
+        let jump_loop = Instruction::Jeq(OtherOp::Immediate(1));
+        let jump_start = Instruction::Jlt(OtherOp::Immediate(0));
+        let jump_end = Instruction::Jeq(OtherOp::Immediate(3));
+
+        let parsed_instructions = parse_instructions(&code);
+
+        assert_eq!(parsed_instructions[4], jump_loop); // found 3
+        assert_eq!(parsed_instructions[5], jump_start); // found 1
+        assert_eq!(parsed_instructions[6], jump_end); // found 7
+    }
 
     #[test]
-    fn labels() {}
+    fn binary_conversion() {
+        let code = "add $r0 $r1 1";
+        let mut buffer = [0u8; 3];
+        let mut binary_instr = 0u32;
+
+        let parsed_instructions = parse_instructions(&code);
+        let mut expected_instructions = Vec::new();
+        
+        parsed_instructions[0].to_binary(&mut buffer);
+
+        fn buffer_to_u32(buffer: &[u8; 3]) -> u32 {
+            (buffer[0] as u32) << 16 | (buffer[1] as u32) << 8 | (buffer[2] as u32)
+        }
+
+        expected_instructions.push(0b00000000_0000_1_000_001_00000001);
+        assert_eq!(buffer_to_u32(&buffer), expected_instructions[0]);
+
+        // print binary numbers
+        println!("Got: {:0>24b}", buffer_to_u32(&buffer));
+        println!("Expected: {:0>24b}", expected_instructions[0]);
+    }
 
     #[test]
-    fn parsing_errors() {}
+    fn parsing_errors() {
+        let code = "add $r0 $r1 290 # outside 8 bit constraints";
+    }
 }

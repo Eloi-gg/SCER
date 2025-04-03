@@ -66,7 +66,7 @@ fn main() {
     let (file_path, debug_mode) = load_args();
     let program_name = file_path.split("/").last().unwrap().to_string();
     let file_data = std::fs::read_to_string(file_path).expect("Could not read file");
-    let program = program::ScarProgram::compile(&file_data).unwrap();
+    let program = program::ScarProgram::compile(file_data).unwrap();
 
     println!("Program: {}\nPress enter to start...", program_name);
     let mut buffer = [0u8; 8];
