@@ -6,16 +6,14 @@ pub(crate) struct ScarProgram {
 
 /// Instruction format (24 bits):
 /// Arithmetic operations:
-///     [op - 4 bits][type = 1][reg_d - 3 bits][reg_a - 3 bits][flag_enable - 1 bit][imm - 8 bits]
-///     [op - 4 bits][type = 0][reg_d - 3 bits][reg_a - 3 bits][reg_b - 3 bits][flag_enable - 1 bit][todo]
+///     [op - 4 bits][type = 1][padding - 5 bits][reg_d - 3 bits][reg_a - 3 bits][imm - 8 bits]
+///     [op - 4 bits][type = 0][padding - 10 bits][reg_d - 3 bits][reg_a - 3 bits][reg_b - 3 bits]
 /// Comparison operations:
 ///    [op - 4 bits][type = 1][reg_a - 3 bits][imm - 16 bits]
-///    [op - 4 bits][type = 0][reg_a - 3 bits][reg_b - 3 bits]
-/// Stack operations
-///     [op - 4 bits][type = 1][imm - 16 bits]
-///     [op - 4 bits][type = 0][reg_d - 3 bits]
-/// Jump operations
-///     [op - 4 bits][imm - 16 bits]
+///    [op - 4 bits][type = 0][padding - 13 bits][reg_a - 3 bits][reg_b - 3 bits]
+/// Stack/Jump operations
+///     [op - 4 bits][type = 1][padding - 3 bits][imm - 16 bits]
+///     [op - 4 bits][type = 0][padding - 16 bits][reg_d - 3 bits]
 ///
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -85,7 +83,11 @@ impl ArithmeticOp {
             Ok(reg_b) => Ok(ArithmeticOp::Register { dest, reg_a, reg_b }),
             Err(e) => match e {
                 ParsingError::IsNotRegister(_) => match try_immediate(parts[2]) {
-                    Ok(imm) => Ok(ArithmeticOp::Immediate { dest, reg_a, imm: imm as u8 }),
+                    Ok(imm) => Ok(ArithmeticOp::Immediate {
+                        dest,
+                        reg_a,
+                        imm: imm as u8,
+                    }),
                     Err(_) => Err(ParsingError::InvalidInstruction),
                 },
                 _ => Err(e),
@@ -97,16 +99,16 @@ impl ArithmeticOp {
         match self {
             ArithmeticOp::Immediate { dest, reg_a, imm } => {
                 return 1u32 << 19 | // type = 1
-                    (*dest as u32) << 16 |
-                    (*reg_a as u32) << 13 |
-                    (*imm as u32) << 5;
+                    (*dest as u32) << 11 |
+                    (*reg_a as u32) << 8 |
+                    (*imm as u32);
             }
             ArithmeticOp::Register { dest, reg_a, reg_b } => {
                 return 0u32 << 19 | // type = 0
-                    (*dest as u32) << 16 |
-                    (*reg_a as u32) << 13 |
-                    (*reg_b as u32) << 10;
-            },
+                    (*dest as u32) << 6 |
+                    (*reg_a as u32) << 3 |
+                    (*reg_b as u32);
+            }
         }
     }
 }
@@ -141,13 +143,13 @@ impl TwoArgsOp {
             TwoArgsOp::Immediate(reg_a, imm) => {
                 return 1u32 << 19 | // type = 1
                     (*reg_a as u32) << 16 |
-                    (*imm as u32) << 5;
+                    (*imm as u32);
             }
             TwoArgsOp::Register(reg_a, reg_b) => {
                 return 0u32 << 19 | // type = 0
-                    (*reg_a as u32) << 16 |
-                    (*reg_b as u32) << 13;
-            },
+                    (*reg_a as u32) << 3 |
+                    (*reg_b as u32) << 0;
+            }
         }
     }
 }
@@ -163,12 +165,12 @@ impl OtherOp {
         match self {
             OtherOp::Immediate(imm) => {
                 return 1u32 << 19 | // type = 1
-                    (*imm as u32) << 5;
+                    (*imm as u32);
             }
             OtherOp::Register(reg) => {
                 return 0u32 << 19 | // type = 0
-                    (*reg as u32) << 16;
-            },
+                    (*reg as u32);
+            }
         }
     }
 }
@@ -319,28 +321,24 @@ impl Instruction {
     }
 
     fn to_binary(&self, buffer: &mut [u8]) {
-        let mut instruction = 0u32;
         use Instruction::*;
 
-        match self {
-            Add(op) => instruction = 0x0 << 20 | op.to_binary(),
-            Sub(op) => instruction = 0x1 << 20 | op.to_binary(),
-            And(op) => instruction = 0x2 << 20 | op.to_binary(),
-            Or(op) => instruction = 0x3 << 20 | op.to_binary(),
-            Xor(op) => instruction = 0x4 << 20 | op.to_binary(),
-            Asl(op) => instruction = 0x5 << 20 | op.to_binary(),
-            Asr(op) => instruction = 0x6 << 20 | op.to_binary(),
-            Cmp(op) => instruction = 0x7 << 20 | op.to_binary(),
-            Push(op) => instruction = 0x8 << 20 | op.to_binary(),
-            Pop(reg) => instruction = 0x9 << 20 | (*reg as u32) << 16,
-            Lw(op) => instruction = 0xA << 20 | op.to_binary(),
-            Sw(op) => instruction = 0xB << 20 | op.to_binary(),
-            Mov(reg, imm) => {
-                instruction = (*reg as u32) << 16;
-                instruction |= *imm as u32;
-            }
-            Jeq(op) => instruction = 0xC << 20 | op.to_binary(),
-            Jlt(op) => instruction = 0xD << 20 | op.to_binary(),
+        let instruction: u32 = match self {
+            Add(op) => 0x0 << 20 | op.to_binary(),
+            Sub(op) => 0x1 << 20 | op.to_binary(),
+            And(op) => 0x2 << 20 | op.to_binary(),
+            Or(op) => 0x3 << 20 | op.to_binary(),
+            Xor(op) => 0x4 << 20 | op.to_binary(),
+            Asl(op) => 0x5 << 20 | op.to_binary(),
+            Asr(op) => 0x6 << 20 | op.to_binary(),
+            Cmp(op) => 0x7 << 20 | op.to_binary(),
+            Push(op) => 0x8 << 20 | op.to_binary(),
+            Pop(reg) => 0x9 << 20 | (*reg as u32),
+            Lw(op) => 0xA << 20 | op.to_binary(),
+            Sw(op) => 0xB << 20 | op.to_binary(),
+            Mov(reg, imm) => 0xC << 20 | (*reg as u32) << 19 | *imm as u32,
+            Jeq(op) => 0xD << 20 | op.to_binary(),
+            Jlt(op) => 0xE << 20 | op.to_binary(),
         };
 
         buffer[0] = (instruction >> 16) as u8;
@@ -792,25 +790,62 @@ jeq end
 
     #[test]
     fn binary_conversion() {
-        let code = "add $r0 $r1 1";
+        let code = "add $r0 $r1 1
+sub $a1 $a2 $r1
+and $a2 $a2 $z
+asr $a0 $r2 255
+cmp $r0 0xFFFF
+cmp $r1 $r2
+push $r0
+push 0xFFFF
+pop $r1
+sw $r0 $r1
+mov $r0 0xFF
+jeq $r0
+jlt 512
+";
+
         let mut buffer = [0u8; 3];
         let mut binary_instr = 0u32;
 
         let parsed_instructions = parse_instructions(&code);
         let mut expected_instructions = Vec::new();
-        
-        parsed_instructions[0].to_binary(&mut buffer);
+
+        let binary_parsed_instructions = parsed_instructions
+            .iter()
+            .map(|x| {
+                x.to_binary(&mut buffer);
+                buffer_to_u32(&buffer)
+            })
+            .collect::<Vec<_>>();
 
         fn buffer_to_u32(buffer: &[u8; 3]) -> u32 {
             (buffer[0] as u32) << 16 | (buffer[1] as u32) << 8 | (buffer[2] as u32)
         }
 
-        expected_instructions.push(0b00000000_0000_1_000_001_00000001);
-        assert_eq!(buffer_to_u32(&buffer), expected_instructions[0]);
+        // opcode-type-padding-reg_a-reg_b-imm
+        expected_instructions.push(0b0000_1_00000_000_001_00000001); // add $r0 $r1 1
+        expected_instructions.push(0b0001_0_0000000000_100_101_001); // sub $a1 $a2 $r1
+        expected_instructions.push(0b0010_0_0000000000_101_101_110); // and $a2 $a2 $z
+        expected_instructions.push(0b0110_1_00000_011_010_11111111); // asr $a0 $r2 255
+        expected_instructions.push(0b0111_1_000___1111111111111111); // cmp $r0 0xFF
+        expected_instructions.push(0b0111_0_0000000000000__001_010); // cmp $r1 $r2
+        expected_instructions.push(0b1000_0_0000000000000000___000); // push $r0
+        expected_instructions.push(0b1000_1_000___1111111111111111); // push 0xFFFF
+        expected_instructions.push(0b1001_0_0000000000000000___001); // pop $r1
+        expected_instructions.push(0b1011_0_0000000000000__000_001); // sw $r0 $r1
+        expected_instructions.push(0b1100_0___000_0000000011111111); // mov $r0 0xFF
+        expected_instructions.push(0b1101_0_0000000000000000___000); // jeq $r0
+        expected_instructions.push(0b1110_1_000___0000001000000000); // jlt 512
 
         // print binary numbers
-        println!("Got: {:0>24b}", buffer_to_u32(&buffer));
-        println!("Expected: {:0>24b}", expected_instructions[0]);
+
+        for i in 0..expected_instructions.len() {
+            println!("Instruction: {:?}", parsed_instructions[i]);
+            println!("Got:      {:0>32b}", binary_parsed_instructions[i]);
+            println!("Expected: {:0>32b}", expected_instructions[i]);
+            assert_eq!(binary_parsed_instructions[i], expected_instructions[i]);
+        }
     }
 
     #[test]
