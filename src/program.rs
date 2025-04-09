@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap};
 
 pub(crate) struct ScarProgram {
     instructions: Vec<Instruction>,
@@ -74,7 +74,7 @@ enum ArithmeticOp {
 impl ArithmeticOp {
     fn try_new(parts: &Vec<&str>) -> Result<ArithmeticOp, ParsingError> {
         if parts.len() != 3 {
-            return Err(ParsingError::TooManyArguments);
+            return Err(ParsingError::InvalidNumberOfArguments);
         }
         let dest = Register::try_from(parts[0])?; // Dest must be a register
         let reg_a = Register::try_from(parts[1])?; // Reg A must be a register
@@ -122,7 +122,7 @@ enum TwoArgsOp {
 impl TwoArgsOp {
     fn try_new(parts: &Vec<&str>) -> Result<TwoArgsOp, ParsingError> {
         if parts.len() != 2 {
-            return Err(ParsingError::TooManyArguments);
+            return Err(ParsingError::InvalidNumberOfArguments);
         }
         let reg_a = Register::try_from(parts[0])?; // Reg A must be a register
 
@@ -180,7 +180,7 @@ pub enum ParsingError {
     EmptyLine,
     IsNotRegister(String),
     InvalidInstruction,
-    TooManyArguments,
+    InvalidNumberOfArguments,
     InvalidRegister,
     LabelDuplicate(String),
     UnknownInstruction(String),
@@ -249,7 +249,7 @@ impl Instruction {
         // Push and jump operations
         if matches!(op, "push" | "jeq" | "jlt") {
             if args.len() != 1 {
-                return Err(ParsingError::TooManyArguments);
+                return Err(ParsingError::InvalidNumberOfArguments);
             }
             let op_content = match Register::try_from(args[0]) {
                 Ok(reg) => Ok(OtherOp::Register(reg)),
@@ -275,7 +275,7 @@ impl Instruction {
 
         if "pop" == op {
             if args.len() != 1 {
-                return Err(ParsingError::TooManyArguments);
+                return Err(ParsingError::InvalidNumberOfArguments);
             }
             return match Register::try_from(args[0]) {
                 Ok(reg) => Ok(Instruction::Pop(reg)),
@@ -286,7 +286,7 @@ impl Instruction {
         // Memory operations
         if matches!(op, "lw" | "sw") {
             if args.len() != 2 {
-                return Err(ParsingError::TooManyArguments);
+                return Err(ParsingError::InvalidNumberOfArguments);
             }
             let reg = Register::try_from(args[0])?; // Arg 0 must be a register
             let op_content = match Register::try_from(args[1]) {
@@ -309,7 +309,7 @@ impl Instruction {
         // Move operation
         if "mov" == op {
             if args.len() != 2 {
-                return Err(ParsingError::TooManyArguments);
+                return Err(ParsingError::InvalidNumberOfArguments);
             }
             let reg = Register::try_from(args[0])?;
             let imm = try_immediate(args[1])?;
@@ -429,8 +429,13 @@ impl ScarProgram {
         Self::preprocessor(&mut code)?;
         let mut buffer = [0u8; 3]; // 24bits per instruction
         for line in code.lines() {
-            let instruction = Instruction::parse(line)?;
-            instruction.to_binary(&mut buffer);
+            match Instruction::parse(line) {
+                Ok(instruction) => instruction.to_binary(&mut buffer),
+                Err(e) => match e {
+                    ParsingError::EmptyLine => continue,
+                    _ => panic!("Failed to parse instruction: {:?} | {}", e, line),
+                },
+            }
             out.extend_from_slice(&buffer);
         }
 

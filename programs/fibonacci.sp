@@ -26,13 +26,13 @@ add $a1 $a1 2
 mov $r1 1
 sw $r0 $a1
 add $a1 $a1 2
-sub $a2 2
+sub $a2 $a2 2
 
 @compute
 add $r0 $r0 $r1 # Compute and store in r0
 sw $r0 $a1      # Store in out
 add $a1 $a1 2   # incr out
-sub $a2 2       # decr counter
+sub $a2 $a2 2   # decr counter
 add $r2 $r1 0   # Swap r1 and r2
 add $r1 $r0 0
 add $r0 $r2 0

@@ -4,3 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+argh="0.1.13"
+
+[[bin]]
+name = "scer_runner"
+path = "src/scer_runner.rs"
+
+[[bin]]
+name = "scer_assembler"
+path = "src/scer_assembler.rs"
