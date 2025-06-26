@@ -29,7 +29,7 @@ fn main() {
 
     let program_name = args.file_path.split("/").last().unwrap().to_string();
     let program_content = std::fs::read_to_string(&args.file_path).expect("Could not read file");
-    let program = program::ScarProgram::compile(program_content).expect("Could not compile program.");
+    let program = program::ScerProgram::compile(program_content).expect("Could not compile program.");
     let output_path = args.output_path.unwrap_or_else(|| {
         args.file_path
             .replace(".sp", ".csp")

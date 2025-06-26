@@ -18,8 +18,8 @@
 !test_end_address 0xFFFF
 
 @start
-mov $a1 0xF002
-lw $a2 0xF000
+mov $a1 output_address
+lw $a2 input_address
 mov $r0 0
 sw $r0 $a1
 add $a1 $a1 2
@@ -39,8 +39,8 @@ add $r0 $r2 0
 cmp $a2 0
 jeq compute
 
-mov $a2 0xFF
-sw  $a2 0xFFFF
-cmp $a2 0xFF
-@end
+mov $a2 0xFF    # load a2 with 1's
+sw  $a2 test_end_address  # store 1's in test end address to indicate test end
+cmp $a2 0xFF    # reset comparison register
+@end            # infinite loop
 jeq end

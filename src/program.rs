@@ -1,6 +1,6 @@
 use std::{collections::HashMap};
 
-pub(crate) struct ScarProgram {
+pub(crate) struct ScerProgram {
     instructions: Vec<Instruction>,
 }
 
@@ -18,7 +18,7 @@ pub(crate) struct ScarProgram {
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(u8)]
-enum Register {
+pub enum Register {
     R0,
     R1,
     R2,
@@ -58,7 +58,7 @@ fn try_immediate(s: &str) -> Result<u16, ParsingError> {
 }
 
 #[derive(Debug, PartialEq)]
-enum ArithmeticOp {
+pub enum ArithmeticOp {
     Immediate {
         dest: Register,
         reg_a: Register,
@@ -111,10 +111,35 @@ impl ArithmeticOp {
             }
         }
     }
+
+    fn from_binary(binary: u32) -> Self {
+        let type_bit = (binary >> 19) & 0x1;
+
+        if type_bit == 1 { // Immediate
+            let dest = ((binary >> 11) & 0x7) as u8;
+            let reg_a = ((binary >> 8) & 0x7) as u8;
+            let imm = (binary & 0xFF) as u8;
+            return ArithmeticOp::Immediate {
+                dest: unsafe { std::mem::transmute(dest) },
+                reg_a: unsafe { std::mem::transmute(reg_a) },
+                imm,
+            };
+        } else { // Register
+            let dest = ((binary >> 6) & 0x7) as u8;
+            let reg_a = ((binary >> 3) & 0x7) as u8;
+            let reg_b = (binary & 0x7) as u8;
+            return ArithmeticOp::Register {
+                dest: unsafe { std::mem::transmute(dest) },
+                reg_a: unsafe { std::mem::transmute(reg_a) },
+                reg_b: unsafe { std::mem::transmute(reg_b) },
+            };
+        }
+    
+    }
 }
 
 #[derive(Debug, PartialEq)]
-enum TwoArgsOp {
+pub enum TwoArgsOp {
     Immediate(Register, u16),
     Register(Register, Register),
 }
@@ -152,10 +177,30 @@ impl TwoArgsOp {
             }
         }
     }
+
+    fn from_binary(binary: u32) -> Self {
+        let type_bit = (binary >> 19) & 0x1;
+
+        if type_bit == 1 { // Immediate
+            let reg_a = ((binary >> 16) & 0x7) as u8;
+            let imm = (binary & 0xFFFF) as u16;
+        return TwoArgsOp::Immediate(
+                unsafe { std::mem::transmute(reg_a) },
+                imm,
+            );
+        } else { // Register
+            let reg_a = ((binary >> 3) & 0x7) as u8;
+            let reg_b = (binary & 0x7) as u8;
+            return TwoArgsOp::Register(
+                unsafe { std::mem::transmute(reg_a) },
+                unsafe { std::mem::transmute(reg_b) },
+            );
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
-enum OtherOp {
+pub enum OtherOp {
     Immediate(u16),
     Register(Register),
 }
@@ -173,6 +218,20 @@ impl OtherOp {
             }
         }
     }
+
+    fn from_binary(binary: u32) -> Self {
+        let type_bit = (binary >> 19) & 0x1;
+
+        if type_bit == 1 {
+            // Immediate
+            let imm = (binary & 0xFFFF) as u16;
+            return OtherOp::Immediate(imm);
+        } else {
+            // Register
+            let reg = (binary & 0x7) as u8;
+            return OtherOp::Register(unsafe { std::mem::transmute(reg) });
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -187,7 +246,7 @@ pub enum ParsingError {
 }
 
 #[derive(Debug, PartialEq)]
-enum Instruction {
+pub enum Instruction {
     /// Arithmetic operations
     Add(ArithmeticOp),
     Sub(ArithmeticOp),
@@ -336,7 +395,7 @@ impl Instruction {
             Pop(reg) => 0x9 << 20 | (*reg as u32),
             Lw(op) => 0xA << 20 | op.to_binary(),
             Sw(op) => 0xB << 20 | op.to_binary(),
-            Mov(reg, imm) => 0xC << 20 | (*reg as u32) << 19 | *imm as u32,
+            Mov(reg, imm) => 0xC << 20 | (*reg as u32) << 16 | *imm as u32,
             Jeq(op) => 0xD << 20 | op.to_binary(),
             Jlt(op) => 0xE << 20 | op.to_binary(),
         };
@@ -345,9 +404,38 @@ impl Instruction {
         buffer[1] = (instruction >> 8) as u8;
         buffer[2] = instruction as u8;
     }
+
+    pub fn from_binary(binary: u32) -> Self {
+        use Instruction::*;
+
+        let op = (binary >> 20) & 0xF;
+        let instruction = binary & 0xFFFFF; // 20 remaining bits
+
+        match op {
+            0x0 => Add(ArithmeticOp::from_binary(instruction)),
+            0x1 => Sub(ArithmeticOp::from_binary(instruction)),
+            0x2 => And(ArithmeticOp::from_binary(instruction)),
+            0x3 => Or(ArithmeticOp::from_binary(instruction)),
+            0x4 => Xor(ArithmeticOp::from_binary(instruction)),
+            0x5 => Asl(ArithmeticOp::from_binary(instruction)),
+            0x6 => Asr(ArithmeticOp::from_binary(instruction)),
+            0x7 => Cmp(TwoArgsOp::from_binary(instruction)),
+            0x8 => Push(OtherOp::from_binary(instruction)),
+            0x9 => Pop(unsafe { std::mem::transmute((instruction & 0x7) as u8) }),
+            0xA => Lw(TwoArgsOp::from_binary(instruction)),
+            0xB => Sw(TwoArgsOp::from_binary(instruction)),
+            0xC => Mov(
+                unsafe { std::mem::transmute((instruction >> 16) as u8) },
+                (instruction & 0xFFFF) as u16,
+            ),
+            0xD => Jeq(OtherOp::from_binary(instruction)),
+            0xE => Jlt(OtherOp::from_binary(instruction)),
+            _ => panic!("Unknown instruction: {:#X}", op),
+        }
+    }
 }
 
-impl ScarProgram {
+impl ScerProgram {
     fn preprocessor(code: &mut String) -> Result<(), ParsingError> {
         let mut ranges = Vec::new();
 
@@ -460,7 +548,7 @@ mod compilation {
     fn parse_instructions(code: &str) -> Vec<Instruction> {
         let mut code = code.to_owned();
         let mut parsed_instructions = Vec::new();
-        compilation::ScarProgram::preprocessor(&mut code).unwrap();
+        compilation::ScerProgram::preprocessor(&mut code).unwrap();
         for line in code.lines() {
             //
             match Instruction::parse(line) {
@@ -779,7 +867,7 @@ jlt start
 jeq end
 ";
         let mut prepprocessed_code = code.to_owned();
-        compilation::ScarProgram::preprocessor(&mut prepprocessed_code).unwrap();
+        compilation::ScerProgram::preprocessor(&mut prepprocessed_code).unwrap();
         println!("{}", prepprocessed_code);
 
         let jump_loop = Instruction::Jeq(OtherOp::Immediate(1));
@@ -805,7 +893,7 @@ push $r0
 push 0xFFFF
 pop $r1
 sw $r0 $r1
-mov $r0 0xFF
+mov $a1 0xFF
 jeq $r0
 jlt 512
 ";
@@ -839,7 +927,7 @@ jlt 512
         expected_instructions.push(0b1000_1_000___1111111111111111); // push 0xFFFF
         expected_instructions.push(0b1001_0_0000000000000000___001); // pop $r1
         expected_instructions.push(0b1011_0_0000000000000__000_001); // sw $r0 $r1
-        expected_instructions.push(0b1100_0___000_0000000011111111); // mov $r0 0xFF
+        expected_instructions.push(0b1100_0___100_0000000011111111); // mov $a1 0xFF
         expected_instructions.push(0b1101_0_0000000000000000___000); // jeq $r0
         expected_instructions.push(0b1110_1_000___0000001000000000); // jlt 512
 
@@ -851,6 +939,13 @@ jlt 512
             println!("Expected: {:0>32b}", expected_instructions[i]);
             assert_eq!(binary_parsed_instructions[i], expected_instructions[i]);
         }
+
+        let decompiled_instructions = binary_parsed_instructions
+            .iter()
+            .map(|&x| Instruction::from_binary(x))
+            .collect::<Vec<_>>();
+
+        assert_sequence(&decompiled_instructions, &parsed_instructions);
     }
 
     #[test]
@@ -858,3 +953,4 @@ jlt 512
         let code = "add $r0 $r1 290 # outside 8 bit constraints";
     }
 }
+

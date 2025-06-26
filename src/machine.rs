@@ -58,8 +58,9 @@ impl Machine {
 
     pub fn load(&mut self, program: &[u8]) {
         assert!(program.len() < Self::STACK_MEM_START);
-        self.memory[0..program.len()].fill(0);
-        self.memory[0..program.len()].copy_from_slice(program);
+        self.memory[(Self::PROGRAM_MEM_START)..(Self::PROGRAM_MEM_START + program.len())].fill(0);
+        self.memory[(Self::PROGRAM_MEM_START)..(Self::PROGRAM_MEM_START + program.len())]
+            .copy_from_slice(program);
     }
 
     pub fn get_state(&self) -> String {
@@ -76,25 +77,48 @@ impl Machine {
     }
 
     pub fn step(&mut self) {
-        self.pc += 1;
+        use crate::program::{ArithmeticOp, Instruction, Register};
+
+        // Fetch
+        let instruction = unsafe {
+            let mut instruction_addr = &self.memory[self.pc as usize] as *const u8;
+            let instr_1 = instruction_addr.read_unaligned() as u32;
+            instruction_addr = instruction_addr.add(1);
+            let instr_2 = instruction_addr.read_unaligned() as u32;
+            instruction_addr = instruction_addr.add(1);
+            let instr_3 = instruction_addr.read_unaligned() as u32;
+            instr_1 << 16 | instr_2 << 8 | instr_3
+        };
+        println!(
+            "Executing instruction at {:#X}: {:#b}",
+            self.pc, instruction
+        );
+        let decoded_instruction = Instruction::from_binary(instruction);
+        println!("Decoded instruction: {:?}", decoded_instruction);
+        self.pc += 3; // Instruction size : 24 bits
     }
 
     fn memory(&self) -> *const u8 {
         self.memory.as_ptr()
+    }
+
+    fn memory_mut(&mut self) -> *mut u8 {
+        self.memory.as_mut_ptr()
     }
 }
 
 #[cfg(test)]
 mod programs {
     use crate::machine::Machine;
-    use crate::program::ScarProgram;
+    use crate::program::ScerProgram;
 
     const TEST_END_ADDRESS: u16 = 0xFFFF;
 
     fn wait_for_test_end(machine: &mut Machine) -> bool {
         unsafe {
             let test_end_addr = machine.memory().add(TEST_END_ADDRESS as usize);
-            for _ in 0..10000{
+            for _ in 0..10 {
+                // Todo: not only 10 cycles
                 machine.step();
                 if *test_end_addr != 0 {
                     return true;
@@ -106,10 +130,29 @@ mod programs {
 
     #[test]
     fn fibonacci() {
+        const PROGRAM_INPUT_ADDR: u16 = 0xF000; // Number of Fibonacci terms to compute
+        const PROGRAM_OUTPUT_ADDR: u16 = 0xF002; // Output address for Fibonacci numbers
+
         let mut machine = Machine::new();
         let instructions = std::fs::read_to_string("./programs/fibonacci.sp").unwrap();
-        let program = ScarProgram::compile(instructions).unwrap();
+        let program = ScerProgram::compile(instructions).unwrap();
+        println!("Program: {:?}", program);
+        // 0b1100_0___100_1111000000000010
         machine.load(&program);
+        // unsafe  {
+        //     let input_addr = machine.memory_mut().add(PROGRAM_INPUT_ADDR as usize);
+        //     input_addr.write(10u8); // Input: Compute the first 10 Fibonacci numbers
+        // }
+
         assert!(wait_for_test_end(&mut machine));
+
+        unsafe {
+            let output_addr = machine.memory().add(PROGRAM_OUTPUT_ADDR as usize);
+            let mut fib_numbers = Vec::new();
+            for i in 0..10 {
+                fib_numbers.push(*output_addr.add(i * 2) as u16);
+            }
+            assert_eq!(fib_numbers, vec![0, 1, 1, 2, 3, 5, 8, 13, 21, 34]);
+        }
     }
 }
