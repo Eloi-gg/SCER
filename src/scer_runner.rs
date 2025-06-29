@@ -78,32 +78,43 @@ fn clr() {
 
 fn main() {
     display_logo();
+
+    // Load arguments
     let (file_path, debug_mode) = load_args();
     let program_name = file_path.split("/").last().unwrap().to_string();
-
     let program = std::fs::read(file_path).expect("Could not read file");
 
+    // Wait for user input to start
     println!("Program: {}\nPress enter to start...", program_name);
     let mut buffer = [0u8; 8];
     let _ = std::io::stdin().read(&mut buffer).unwrap();
     clr();
 
+    // Initialize emulator and machine
     let mut emulator = emulator::Emulator::new(16, 2);
     let mut machine = Machine::new();
+    machine.load(&program);
+
     emulator.clear_screen();
-    print!("{}\n", emulator.screen());
-    print!("{}", machine.get_state());
 
     // TODO : hook display
 
     if debug_mode {
-        for _ in 0..10 {
-            let kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
+        for _ in 0..100 {
             machine.step();
             clr();
+            
             // TODO: update display
             print!("{}\n", emulator.screen());
             print!("{}", machine.get_state());
+
+            let kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
+        }
+    } else {
+        for _ in 0..100 {  // TODO: add an adress to shut down computer and not just 100 steps
+            machine.step();
+            clr();
+
         }
     }
     println!();

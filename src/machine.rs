@@ -73,9 +73,26 @@ impl Machine {
     }
 
     pub fn get_state(&self) -> String {
+        let instruction = self.fetch();
+        let decoded_instruction = Instruction::from_binary(instruction);
+
         format!(
-            "r0: {:#X}\nr1: {:#X}\nr2: {:#X}\npc: {:#X}\nsp: {:#X}",
-            self.r0, self.r1, self.r2, self.pc, self.sp
+            "-------------------------------\n\
+            Next instruction: \n\
+            {:#b} \n\
+            {:?}\n\
+            -------------------------------\n\
+            Registers:\n\
+             R0: {:#06X}, R1: {:#06X}, R2: {:#06X}\n\
+             A0: {:#06X}, A1: {:#06X}, A2: {:#06X}\n\
+             Z:  {:#06X}, F:  {:#06X}\n\
+             PC: {:#06X}, SP: {:#06X}\n\
+            -------------------------------\n",
+            instruction, decoded_instruction,
+            self.r0, self.r1, self.r2,
+            self.a0, self.a1, self.a2,
+            self.z, self.f,
+            self.pc, self.sp
         )
     }
 
@@ -85,11 +102,8 @@ impl Machine {
         (display_control, display_data)
     }
 
-    pub fn step(&mut self) {
-        use crate::program::{ArithmeticOp, Instruction, Register};
-
-        // Fetch
-        let instruction = unsafe {
+    fn fetch(&self) -> u32 {
+        unsafe {
             let u8_mem = &self.memory as *const [u16] as *const u8;
             let mut instruction_addr = u8_mem.add(self.pc as usize) as *const u8;
             let instr_1 = instruction_addr.read_unaligned() as u32;
@@ -98,7 +112,14 @@ impl Machine {
             instruction_addr = instruction_addr.add(1);
             let instr_3 = instruction_addr.read_unaligned() as u32;
             instr_1 << 16 | instr_2 << 8 | instr_3
-        };
+        }
+    }
+
+    pub fn step(&mut self) {
+        use crate::program::{ArithmeticOp, Instruction, Register};
+
+        // Fetch
+        let instruction = self.fetch();
         println!(
             "Executing instruction at {:#X}: {:#b}",
             self.pc, instruction
@@ -294,7 +315,7 @@ mod programs {
         unsafe {
             let test_end_addr = machine.memory().add(TEST_END_ADDRESS as usize);
             for _ in 0..100 {
-                // Todo: not only 10 cycles
+                // Todo: not only 100 cycles
                 machine.step();
                 if *test_end_addr != 0 {
                     return true;

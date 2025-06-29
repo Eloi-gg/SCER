@@ -1,0 +1,85 @@
+{
+    // Utilisez IntelliSense pour en savoir plus sur les attributs possibles.
+    // Pointez pour afficher la description des attributs existants.
+    // Pour plus d'informations, visitez : https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'scer_assembler'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=scer_assembler",
+                    "--package=SCER"
+                ],
+                "filter": {
+                    "name": "scer_assembler",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'scer_assembler'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=scer_assembler",
+                    "--package=SCER"
+                ],
+                "filter": {
+                    "name": "scer_assembler",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'scer_runner'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=scer_runner",
+                    "--package=SCER"
+                ],
+                "filter": {
+                    "name": "scer_runner",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "./programs/fibonacci.csp",
+                "-d"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'scer_runner'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=scer_runner",
+                    "--package=SCER"
+                ],
+                "filter": {
+                    "name": "scer_runner",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
