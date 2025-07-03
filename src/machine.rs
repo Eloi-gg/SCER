@@ -14,8 +14,10 @@ pub struct Machine {
     sp: u16,
 
     // memory: 2^16 bytes of size 16
-    memory: [u16; 0x10000],
+    memory: [u16; 0xFFFF + 1],
 }
+
+use std::fmt::Debug;
 
 use crate::program::{ArithmeticOp, Instruction, Register};
 
@@ -36,6 +38,8 @@ impl Machine {
     const STACK_MEM_START: usize = 0x4000;
     const HEAP_MEM_START: usize = 0x6000;
     const IO_MEM_START: usize = 0xC000;
+    const TEST_MEM_START: usize = 0xF000;
+    const MEMORY_END: usize = 0xFFFF;
 
     const DISPLAY_CTRL_ADDR: usize = 0xC000;
     const DISPLAY_DATA_ADDR: usize = 0xC001;
@@ -71,31 +75,7 @@ impl Machine {
             );
         }
     }
-
-    pub fn get_state(&self) -> String {
-        let instruction = self.fetch();
-        let decoded_instruction = Instruction::from_binary(instruction);
-
-        format!(
-            "-------------------------------\n\
-            Next instruction: \n\
-            {:#b} \n\
-            {:?}\n\
-            -------------------------------\n\
-            Registers:\n\
-             R0: {:#06X}, R1: {:#06X}, R2: {:#06X}\n\
-             A0: {:#06X}, A1: {:#06X}, A2: {:#06X}\n\
-             Z:  {:#06X}, F:  {:#06X}\n\
-             PC: {:#06X}, SP: {:#06X}\n\
-            -------------------------------\n",
-            instruction, decoded_instruction,
-            self.r0, self.r1, self.r2,
-            self.a0, self.a1, self.a2,
-            self.z, self.f,
-            self.pc, self.sp
-        )
-    }
-
+   
     pub fn get_display_addresses(&self) -> (*const u16, *const u16) {
         let display_control = &self.memory[Self::DISPLAY_CTRL_ADDR];
         let display_data = &self.memory[Self::DISPLAY_DATA_ADDR];
@@ -120,12 +100,7 @@ impl Machine {
 
         // Fetch
         let instruction = self.fetch();
-        println!(
-            "Executing instruction at {:#X}: {:#b}",
-            self.pc, instruction
-        );
         let decoded_instruction = Instruction::from_binary(instruction);
-        println!("Decoded instruction: {:?}", decoded_instruction);
 
         // Execute
         self.execute(decoded_instruction);
@@ -161,6 +136,7 @@ impl Machine {
     }
 
     fn execute(&mut self, instruction: Instruction) {
+        // TODO: Implement all instructions and add tests
         match instruction {
             Instruction::Add(op) => match op {
                 ArithmeticOp::Immediate { dest, reg_a, imm } => {
@@ -260,34 +236,42 @@ impl Machine {
                     }
                 }
             },
-            Instruction::Jeq(op) => {
-                match op {
-                    crate::program::OtherOp::Immediate(imm) => {
-                        if self.f & Self::ZERO_FLAG != 0 {
-                            self.pc = (imm - 3) as u16;
-                        }
-                    }
-                    crate::program::OtherOp::Register(reg) => {
-                        if self.f & Self::ZERO_FLAG != 0 {
-                            self.pc = self.get_register_value(reg) - 3;
-                        }
+            Instruction::Jeq(op) => match op {
+                crate::program::OtherOp::Immediate(imm) => {
+                    if self.f & Self::ZERO_FLAG != 0 {
+                        self.pc = (imm - 3) as u16;
                     }
                 }
-            }
-            Instruction::Jlt(op) => {
-                match op {
-                    crate::program::OtherOp::Immediate(imm) => {
-                        if self.f & Self::NEGATIVE_FLAG == 0 {
-                            self.pc = (imm - 3) as u16;
-                        }
-                    }
-                    crate::program::OtherOp::Register(reg) => {
-                        if self.f & Self::NEGATIVE_FLAG == 0 {
-                            self.pc = self.get_register_value(reg) - 3;
-                        }
+                crate::program::OtherOp::Register(reg) => {
+                    if self.f & Self::ZERO_FLAG != 0 {
+                        self.pc = self.get_register_value(reg) - 3;
                     }
                 }
-            }
+            },
+            Instruction::Jlt(op) => match op {
+                crate::program::OtherOp::Immediate(imm) => {
+                    if self.f & Self::NEGATIVE_FLAG == 0 {
+                        self.pc = (imm - 3) as u16;
+                    }
+                }
+                crate::program::OtherOp::Register(reg) => {
+                    if self.f & Self::NEGATIVE_FLAG == 0 {
+                        self.pc = self.get_register_value(reg) - 3;
+                    }
+                }
+            },
+            Instruction::Jne(op) => match op {
+                crate::program::OtherOp::Immediate(imm) => {
+                    if self.f & Self::ZERO_FLAG == 0 {
+                        self.pc = (imm - 3) as u16;
+                    }
+                }
+                crate::program::OtherOp::Register(reg) => {
+                    if self.f & Self::ZERO_FLAG == 0 {
+                        self.pc = self.get_register_value(reg) - 3;
+                    }
+                }
+            },
 
             _ => {
                 unimplemented!()
@@ -301,6 +285,48 @@ impl Machine {
 
     fn memory_mut(&mut self) -> *mut u16 {
         self.memory.as_mut_ptr()
+    }
+
+    pub fn set_memory(&mut self, address: u16, value: u16) {
+        println!("Setting memory at address {:#06X} to value {:#06X}", address, value);
+        assert!(address < Self::MEMORY_END as u16, "Address out of bounds");
+        unsafe {
+            *(self.memory_mut().add(address as usize) as *mut u16) = value;
+        }
+    }
+}
+
+impl Debug for Machine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        
+        let instruction = self.fetch();
+        let decoded_instruction = Instruction::from_binary(instruction);
+
+         write!(f,
+            "-------------------------------\n\
+            Next instruction: \n\
+            {:#034b} \n\
+            {:?}\n\
+            -------------------------------\n\
+            Registers:\n\
+             R0: {:#06X}, R1: {:#06X}, R2: {:#06X}\n\
+             A0: {:#06X}, A1: {:#06X}, A2: {:#06X}\n\
+             Z:  {:#06X}, F:  {:#06X}\n\
+             PC: {:#06X}, SP: {:#06X}\n\
+            -------------------------------\n",
+            instruction,
+            decoded_instruction,
+            self.r0,
+            self.r1,
+            self.r2,
+            self.a0,
+            self.a1,
+            self.a2,
+            self.z,
+            self.f,
+            self.pc,
+            self.sp
+        )
     }
 }
 

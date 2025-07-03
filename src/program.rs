@@ -1,4 +1,4 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 pub(crate) struct ScerProgram {
     instructions: Vec<Instruction>,
@@ -57,7 +57,7 @@ fn try_immediate(s: &str) -> Result<u16, ParsingError> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum ArithmeticOp {
     Immediate {
         dest: Register,
@@ -115,7 +115,8 @@ impl ArithmeticOp {
     fn from_binary(binary: u32) -> Self {
         let type_bit = (binary >> 19) & 0x1;
 
-        if type_bit == 1 { // Immediate
+        if type_bit == 1 {
+            // Immediate
             let dest = ((binary >> 11) & 0x7) as u8;
             let reg_a = ((binary >> 8) & 0x7) as u8;
             let imm = (binary & 0xFF) as u8;
@@ -124,7 +125,8 @@ impl ArithmeticOp {
                 reg_a: unsafe { std::mem::transmute(reg_a) },
                 imm,
             };
-        } else { // Register
+        } else {
+            // Register
             let dest = ((binary >> 6) & 0x7) as u8;
             let reg_a = ((binary >> 3) & 0x7) as u8;
             let reg_b = (binary & 0x7) as u8;
@@ -134,11 +136,21 @@ impl ArithmeticOp {
                 reg_b: unsafe { std::mem::transmute(reg_b) },
             };
         }
-    
     }
 }
 
-#[derive(Debug, PartialEq)]
+impl std::fmt::Debug for ArithmeticOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Immediate { dest, reg_a, imm } => write!(f, "{:?}, {:?}, {:#X}", dest, reg_a, imm),
+            Self::Register { dest, reg_a, reg_b } => {
+                write!(f, "{:?}, {:?}, {:?}", dest, reg_a, reg_b)
+            }
+        }
+    }
+}
+
+#[derive(PartialEq)]
 pub enum TwoArgsOp {
     Immediate(Register, u16),
     Register(Register, Register),
@@ -181,25 +193,32 @@ impl TwoArgsOp {
     fn from_binary(binary: u32) -> Self {
         let type_bit = (binary >> 19) & 0x1;
 
-        if type_bit == 1 { // Immediate
+        if type_bit == 1 {
+            // Immediate
             let reg_a = ((binary >> 16) & 0x7) as u8;
             let imm = (binary & 0xFFFF) as u16;
-        return TwoArgsOp::Immediate(
-                unsafe { std::mem::transmute(reg_a) },
-                imm,
-            );
-        } else { // Register
+            return TwoArgsOp::Immediate(unsafe { std::mem::transmute(reg_a) }, imm);
+        } else {
+            // Register
             let reg_a = ((binary >> 3) & 0x7) as u8;
             let reg_b = (binary & 0x7) as u8;
-            return TwoArgsOp::Register(
-                unsafe { std::mem::transmute(reg_a) },
-                unsafe { std::mem::transmute(reg_b) },
-            );
+            return TwoArgsOp::Register(unsafe { std::mem::transmute(reg_a) }, unsafe {
+                std::mem::transmute(reg_b)
+            });
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
+impl std::fmt::Debug for TwoArgsOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Immediate(reg_a, imm) => write!(f, "{:?}, {:#X}", reg_a, imm),
+            Self::Register(reg_a, reg_b) => write!(f, "{:?}, {:?}", reg_a, reg_b),
+        }
+    }
+}
+
+#[derive(PartialEq)]
 pub enum OtherOp {
     Immediate(u16),
     Register(Register),
@@ -234,6 +253,15 @@ impl OtherOp {
     }
 }
 
+impl std::fmt::Debug for OtherOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Immediate(imm) => write!(f, "{:#X}", imm),
+            Self::Register(reg) => write!(f, "{:?}", reg),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum ParsingError {
     EmptyLine,
@@ -245,7 +273,7 @@ pub enum ParsingError {
     UnknownInstruction(String),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum Instruction {
     /// Arithmetic operations
     Add(ArithmeticOp),
@@ -271,6 +299,7 @@ pub enum Instruction {
     /// Jump operations
     Jeq(OtherOp),
     Jlt(OtherOp),
+    Jne(OtherOp),
 }
 
 impl Instruction {
@@ -306,7 +335,7 @@ impl Instruction {
         }
 
         // Push and jump operations
-        if matches!(op, "push" | "jeq" | "jlt") {
+        if matches!(op, "push" | "jeq" | "jlt" | "jne") {
             if args.len() != 1 {
                 return Err(ParsingError::InvalidNumberOfArguments);
             }
@@ -328,6 +357,7 @@ impl Instruction {
                 "push" => Ok(Instruction::Push(op_content)),
                 "jeq" => Ok(Instruction::Jeq(op_content)),
                 "jlt" => Ok(Instruction::Jlt(op_content)),
+                "jne" => Ok(Instruction::Jne(op_content)),
                 _ => unreachable!(),
             };
         }
@@ -398,6 +428,7 @@ impl Instruction {
             Mov(reg, imm) => 0xC << 20 | (*reg as u32) << 16 | *imm as u32,
             Jeq(op) => 0xD << 20 | op.to_binary(),
             Jlt(op) => 0xE << 20 | op.to_binary(),
+            Jne(op) => 0xF << 20 | op.to_binary(),
         };
 
         buffer[0] = (instruction >> 16) as u8;
@@ -430,11 +461,35 @@ impl Instruction {
             ),
             0xD => Jeq(OtherOp::from_binary(instruction)),
             0xE => Jlt(OtherOp::from_binary(instruction)),
+            0xF => Jne(OtherOp::from_binary(instruction)),
             _ => panic!("Unknown instruction: {:#X}", op),
         }
     }
 }
 
+impl std::fmt::Debug for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Add(arg0) => write!(f, "add {:?}", arg0),
+            Self::Sub(arg0) => write!(f, "sub {:?}", arg0),
+            Self::And(arg0) => write!(f, "and {:?}", arg0),
+            Self::Or(arg0) =>  write!(f, "or {:?}", arg0),
+            Self::Xor(arg0) => write!(f, "xor {:?}", arg0),
+            Self::Asl(arg0) => write!(f, "asl {:?}", arg0),
+            Self::Asr(arg0) => write!(f, "asr {:?}", arg0),
+            Self::Cmp(arg0) => write!(f, "cmp {:?}", arg0),
+            Self::Push(arg0) => write!(f, "push {:?}", arg0),
+            Self::Pop(arg0) => write!(f, "pop {:?}", arg0),
+            Self::Lw(arg0) => write!(f, "lw {:?}", arg0),
+            Self::Sw(arg0) => write!(f, "sw {:?}", arg0),
+            Self::Mov(arg0, arg1) => 
+                write!(f, "mov {:?}, {:#X}", arg0, arg1),
+            Self::Jeq(arg0) => write!(f, "jeq {:?}", arg0),
+            Self::Jlt(arg0) => write!(f, "jlt {:?}", arg0),
+            Self::Jne(arg0) => write!(f, "jne {:?}", arg0),
+        }
+    }
+}
 impl ScerProgram {
     fn preprocessor(code: &mut String) -> Result<(), ParsingError> {
         let mut ranges = Vec::new();
@@ -792,6 +847,8 @@ jeq 0x1234 # immediate
 jeq $r2 # register
 jlt 0x0255 # immediate
 jlt $a0 # same register
+jne 0xFFFF # immediate
+jne $r1 # register
 ";
         let parsed_instructions = parse_instructions(&code);
         let mut expected_instructions = Vec::new();
@@ -801,6 +858,8 @@ jlt $a0 # same register
         expected_instructions.push(Instruction::Jeq(OtherOp::Register(Register::R2)));
         expected_instructions.push(Instruction::Jlt(OtherOp::Immediate(0x0255)));
         expected_instructions.push(Instruction::Jlt(OtherOp::Register(Register::A0)));
+        expected_instructions.push(Instruction::Jne(OtherOp::Immediate(0xFFFF)));
+        expected_instructions.push(Instruction::Jne(OtherOp::Register(Register::R1)));
 
         assert_sequence(&parsed_instructions, &expected_instructions);
 
@@ -896,6 +955,7 @@ sw $r0 $r1
 mov $a1 0xFF
 jeq $r0
 jlt 512
+jne $r2
 ";
 
         let mut buffer = [0u8; 3];
@@ -930,6 +990,7 @@ jlt 512
         expected_instructions.push(0b1100_0___100_0000000011111111); // mov $a1 0xFF
         expected_instructions.push(0b1101_0_0000000000000000___000); // jeq $r0
         expected_instructions.push(0b1110_1_000___0000001000000000); // jlt 512
+        expected_instructions.push(0b1111_0_0000000000000000___010); // jne $r2
 
         // print binary numbers
 
@@ -953,4 +1014,3 @@ jlt 512
         let code = "add $r0 $r1 290 # outside 8 bit constraints";
     }
 }
-

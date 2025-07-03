@@ -3,7 +3,6 @@ use std::io::{Read, Write};
 
 use machine::Machine;
 
-
 mod emulator;
 mod machine;
 mod program;
@@ -98,23 +97,30 @@ fn main() {
     emulator.clear_screen();
 
     // TODO : hook display
+    // TODO remove this
+    machine.set_memory(0xF000, 10);
 
     if debug_mode {
+        print!("{}\n", emulator.screen());
+        print!("{:?}", machine);
+
+        let _kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
+
         for _ in 0..100 {
             machine.step();
             clr();
-            
+
             // TODO: update display
             print!("{}\n", emulator.screen());
-            print!("{}", machine.get_state());
+            print!("{:?}", machine);
 
-            let kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
+            let _kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
         }
     } else {
-        for _ in 0..100 {  // TODO: add an adress to shut down computer and not just 100 steps
+        for _ in 0..100 {
+            // TODO: add an adress to shut down computer and not just 100 steps
             machine.step();
             clr();
-
         }
     }
     println!();
