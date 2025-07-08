@@ -547,7 +547,7 @@ impl ScerProgram {
                 if label_addresses.contains_key(&label) {
                     return Err(ParsingError::LabelDuplicate(label));
                 }
-                label_addresses.insert(label, instruction_number);
+                label_addresses.insert(label, instruction_number * 3); // 3 bytes per instruction
                 let line_start = code.find(line).unwrap();
                 let line_end = line_start + line.len();
                 ranges.push((line_start, line_end));
@@ -929,15 +929,15 @@ jeq end
         compilation::ScerProgram::preprocessor(&mut prepprocessed_code).unwrap();
         println!("{}", prepprocessed_code);
 
-        let jump_loop = Instruction::Jeq(OtherOp::Immediate(1));
-        let jump_start = Instruction::Jlt(OtherOp::Immediate(0));
-        let jump_end = Instruction::Jeq(OtherOp::Immediate(3));
+        let jump_loop = Instruction::Jeq(OtherOp::Immediate(3 * 1));
+        let jump_start = Instruction::Jlt(OtherOp::Immediate(3 * 0));
+        let jump_end = Instruction::Jeq(OtherOp::Immediate(3 * 3));
 
         let parsed_instructions = parse_instructions(&code);
 
-        assert_eq!(parsed_instructions[4], jump_loop); // found 3
-        assert_eq!(parsed_instructions[5], jump_start); // found 1
-        assert_eq!(parsed_instructions[6], jump_end); // found 7
+        assert_eq!(parsed_instructions[4], jump_loop); 
+        assert_eq!(parsed_instructions[5], jump_start); 
+        assert_eq!(parsed_instructions[6], jump_end); 
     }
 
     #[test]

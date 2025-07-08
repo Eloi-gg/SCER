@@ -106,8 +106,14 @@ fn main() {
 
         let _kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
 
-        for _ in 0..100 {
+        for _step in 0.. {
             machine.step();
+            
+            if machine.get_memory(Machine::MEMORY_END.try_into().unwrap()) != 0 {
+                println!("Program finished.");
+                break;
+            }
+
             clr();
 
             // TODO: update display
@@ -117,9 +123,12 @@ fn main() {
             let _kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
         }
     } else {
-        for _ in 0..100 {
-            // TODO: add an adress to shut down computer and not just 100 steps
+        for _step in 0.. {
             machine.step();
+            if machine.get_memory(Machine::MEMORY_END.try_into().unwrap()) != 0 {
+                println!("Program finished.");
+                break;
+            }
             clr();
         }
     }

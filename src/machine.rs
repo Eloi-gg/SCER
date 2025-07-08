@@ -39,7 +39,7 @@ impl Machine {
     const HEAP_MEM_START: usize = 0x6000;
     const IO_MEM_START: usize = 0xC000;
     const TEST_MEM_START: usize = 0xF000;
-    const MEMORY_END: usize = 0xFFFF;
+    pub const MEMORY_END: usize = 0xFFFF;
 
     const DISPLAY_CTRL_ADDR: usize = 0xC000;
     const DISPLAY_DATA_ADDR: usize = 0xC001;
@@ -75,7 +75,21 @@ impl Machine {
             );
         }
     }
-   
+
+    pub fn reset_registers(&mut self) {
+        self.r0 = 0;
+        self.r1 = 0;
+        self.r2 = 0;
+        self.a0 = 0;
+        self.a1 = 0;
+        self.a2 = 0;
+        self.z = 0;
+        self.f = 0;
+
+        self.pc = Self::PROGRAM_MEM_START as u16;
+        self.sp = Self::STACK_MEM_START as u16;
+    }
+
     pub fn get_display_addresses(&self) -> (*const u16, *const u16) {
         let display_control = &self.memory[Self::DISPLAY_CTRL_ADDR];
         let display_data = &self.memory[Self::DISPLAY_DATA_ADDR];
@@ -288,21 +302,29 @@ impl Machine {
     }
 
     pub fn set_memory(&mut self, address: u16, value: u16) {
-        println!("Setting memory at address {:#06X} to value {:#06X}", address, value);
-        assert!(address < Self::MEMORY_END as u16, "Address out of bounds");
+        println!(
+            "Setting memory at address {:#06X} to value {:#06X}",
+            address, value
+        );
+        assert!(address <= Self::MEMORY_END as u16, "Address out of bounds");
         unsafe {
             *(self.memory_mut().add(address as usize) as *mut u16) = value;
         }
+    }
+
+    pub fn get_memory(&self, address: u16) -> u16 {
+        assert!(address <= Self::MEMORY_END as u16, "Address out of bounds");
+        unsafe { *(self.memory().add(address as usize) as *const u16) }
     }
 }
 
 impl Debug for Machine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        
         let instruction = self.fetch();
         let decoded_instruction = Instruction::from_binary(instruction);
 
-         write!(f,
+        write!(
+            f,
             "-------------------------------\n\
             Next instruction: \n\
             {:#034b} \n\
@@ -340,8 +362,7 @@ mod programs {
     fn wait_for_test_end(machine: &mut Machine) -> bool {
         unsafe {
             let test_end_addr = machine.memory().add(TEST_END_ADDRESS as usize);
-            for _ in 0..100 {
-                // Todo: not only 100 cycles
+            for _ in 0..1000 {
                 machine.step();
                 if *test_end_addr != 0 {
                     return true;
@@ -359,16 +380,10 @@ mod programs {
         let mut machine = Machine::new();
         let instructions = std::fs::read_to_string("./programs/fibonacci.sp").unwrap();
         let program = ScerProgram::compile(instructions).unwrap();
-        println!("Program: {:?}", program);
-        // 0b1100_0___100_1111000000000010
         machine.load(&program);
-        // unsafe  {
-        //     let input_addr = machine.memory_mut().add(PROGRAM_INPUT_ADDR as usize);
-        //     input_addr.write(10u8); // Input: Compute the first 10 Fibonacci numbers
-        // }
 
+        machine.set_memory(PROGRAM_INPUT_ADDR, 10);
         assert!(wait_for_test_end(&mut machine));
-
         unsafe {
             let output_addr = machine.memory().add(PROGRAM_OUTPUT_ADDR as usize);
             let mut fib_numbers = Vec::new();
@@ -376,6 +391,25 @@ mod programs {
                 fib_numbers.push(*output_addr.add(i * 2) as u16);
             }
             assert_eq!(fib_numbers, vec![0, 1, 1, 2, 3, 5, 8, 13, 21, 34]);
+        }
+
+        machine.reset_registers();
+        machine.set_memory(TEST_END_ADDRESS, 0);
+        machine.set_memory(PROGRAM_INPUT_ADDR, 24); // Compute the first 24 Fibonacci numbers
+        assert!(wait_for_test_end(&mut machine));
+        unsafe {
+            let output_addr = machine.memory().add(PROGRAM_OUTPUT_ADDR as usize);
+            let mut fib_numbers = Vec::new();
+            for i in 0..24 {
+                fib_numbers.push(*output_addr.add(i * 2) as u16);
+            }
+            assert_eq!(
+                fib_numbers,
+                vec![
+                    0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610,
+                    987, 1597, 2584, 4181, 6765, 10946, 17711, 28657
+                ]
+            );
         }
     }
 }
