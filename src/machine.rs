@@ -60,8 +60,8 @@ impl Machine {
             z: 0,
             f: 0,
 
-            pc: 0,
-            sp: 0,
+            pc: Self::PROGRAM_MEM_START as u16,
+            sp: Self::STACK_MEM_START as u16,
 
             memory: [0; 0x10000],
             display_ctrl: 0,
@@ -341,6 +341,25 @@ impl Machine {
                     }
                 }
             },
+            Instruction::Push(op) => match op {
+                crate::program::OtherOp::Immediate(imm) => {
+                    self.set_memory(self.sp, imm);
+                    self.sp += 1;
+                    assert!(self.sp < Self::HEAP_MEM_START as u16, "Stack overflow");
+                }
+                crate::program::OtherOp::Register(reg) => {
+                    let value = self.get_register_value(reg);
+                    self.set_memory(self.sp, value);
+                    self.sp += 1;
+                    assert!(self.sp < Self::HEAP_MEM_START as u16, "Stack overflow");
+                }
+            }
+            Instruction::Pop(reg) => {
+                assert!(self.sp > Self::STACK_MEM_START as u16, "Stack underflow");
+                self.sp -= 1;
+                let value = self.get_memory(self.sp);
+                self.set_register_value(reg, value);
+            }
 
             _ => {
                 unimplemented!()
@@ -435,6 +454,45 @@ mod programs {
                 }
             }
             return false;
+        }
+    }
+
+    #[test]
+    fn stack_operations() {
+        const PROGRAM_OUTPUT_ADDR: u16 = 0xF000;
+
+        let instructions = "
+!test_end_address 0xFFFF
+mov $a0 0xF000 # Set output address
+mov $r0 123
+push $r0 # register to stack
+push 234 # immediate value to stack
+pop $r1 
+sw $r1 $a0 # Store popped value to output address
+add $a0 $a0 1 # Increment output address
+push $a0 # Push incremented address to stack
+pop $r1 
+sw $r1 $a0 # Store popped value to output address
+add $a0 $a0 1 # Increment output address
+pop $r1 
+sw $r1 $a0 # Store popped value to output address
+add $a0 $a0 1 # Increment output address
+# program end
+mov $a2 0xFF    
+sw  $a2 test_end_address
+        ";
+
+        let mut machine = Machine::new();
+        let program = ScerProgram::compile(instructions.to_owned()).unwrap();
+        machine.load(&program);
+        wait_for_test_end(&mut machine);
+
+        let expected_output = vec![234, 0xF001, 123];
+        for (i, expected_value) in expected_output.into_iter().enumerate() {
+            unsafe {
+                let output_addr = machine.memory().add(PROGRAM_OUTPUT_ADDR as usize + i);
+                assert_eq!(*output_addr, expected_value as u16, "Output mismatch at index {}", i);
+            }
         }
     }
 
