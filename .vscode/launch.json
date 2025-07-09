@@ -57,7 +57,7 @@
                 }
             },
             "args": [
-                "./programs/fibonacci.csp",
+                "./programs/hello_world.csp",
                 "-d"
             ],
             "cwd": "${workspaceFolder}"

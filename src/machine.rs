@@ -280,7 +280,6 @@ impl Machine {
                 self.set_register_value(reg, value);
             }
             Instruction::Lw(op) => match op {
-                // TODO
                 crate::program::TwoArgsOp::Immediate(reg, imm) => {
                     let address = imm;
                     let value = self.get_memory(address);
@@ -293,7 +292,6 @@ impl Machine {
                 }
             },
             Instruction::Sw(op) => match op {
-                // TODO
                 crate::program::TwoArgsOp::Immediate(reg, imm) => {
                     let address = imm;
                     let value = self.get_register_value(reg);
@@ -308,36 +306,47 @@ impl Machine {
             Instruction::Jeq(op) => match op {
                 crate::program::OtherOp::Immediate(imm) => {
                     if self.f & Self::ZERO_FLAG != 0 {
+                        let z = self.pc; // Store current PC in Z register
                         self.pc = (imm - 3) as u16;
+                        self.z = z;
                     }
                 }
                 crate::program::OtherOp::Register(reg) => {
                     if self.f & Self::ZERO_FLAG != 0 {
+                        let z = self.pc; // Store current PC in Z register
                         self.pc = self.get_register_value(reg) - 3;
+                        self.z = z;
                     }
                 }
             },
             Instruction::Jlt(op) => match op {
                 crate::program::OtherOp::Immediate(imm) => {
                     if self.f & Self::NEGATIVE_FLAG == 0 {
+                        let z = self.pc; // Store current PC in Z register
                         self.pc = (imm - 3) as u16;
+                        self.z = z;
                     }
                 }
                 crate::program::OtherOp::Register(reg) => {
                     if self.f & Self::NEGATIVE_FLAG == 0 {
+                        let z = self.pc; // Store current PC in Z register
                         self.pc = self.get_register_value(reg) - 3;
+                        self.z = z;
                     }
                 }
             },
             Instruction::Jne(op) => match op {
                 crate::program::OtherOp::Immediate(imm) => {
                     if self.f & Self::ZERO_FLAG == 0 {
+                        self.z = self.pc + 3; // Store current PC in Z register
                         self.pc = (imm - 3) as u16;
                     }
                 }
                 crate::program::OtherOp::Register(reg) => {
                     if self.f & Self::ZERO_FLAG == 0 {
+                        let z = self.pc; // Store current PC in Z register
                         self.pc = self.get_register_value(reg) - 3;
+                        self.z = z;
                     }
                 }
             },
@@ -463,6 +472,8 @@ mod programs {
 
         let instructions = "
 !test_end_address 0xFFFF
+push 'a
+pop $r0
 mov $a0 0xF000 # Set output address
 mov $r0 123
 push $r0 # register to stack
