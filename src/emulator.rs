@@ -1,29 +1,56 @@
+#[derive(Clone)]
+pub(crate) struct Logger(Rc<RefCell<Vec<String>>>);
+
+impl Logger {
+    pub(super) fn new() -> Self {
+        Logger(Rc::new(RefCell::new(Vec::new())))
+    }
+
+    pub fn log(&self, level: LogLevel, message: &str) {
+        let string = match level {
+            Info => format!("[INFO] {}", message),
+            Warning => format!("[WARNING] {}", message),
+            Error => format!("[ERROR] {}", message),
+        };
+        self.0.borrow_mut().push(string);
+    }
+
+    pub(super) fn get_logs(&self) -> std::cell::Ref<'_, Vec<String>> {
+        self.0.borrow()
+    }
+}
+
+
+
 pub struct Emulator {
     screen: String,
     screen_modified: bool,
     text: Vec<u8>,
     screen_width: u8,
     screen_height: u8,
+    logger: Logger,
 }
 
-enum LogLevel {
+pub(crate) enum LogLevel {
     Info,
     Warning,
     Error,
 }
 
-use std::ptr::NonNull;
+use std::{ptr::NonNull, rc::Rc};
+use std::cell::RefCell;
 
 use LogLevel::*;
 
 impl Emulator {
-    pub(super) fn new(width: u8, height: u8) -> Self {
+    pub(super) fn new(width: u8, height: u8, logger: Logger) -> Self {
         Emulator {
             screen_modified: false,
             screen_width: width,
             screen_height: height,
             screen: String::new(),
             text: vec![' '.to_ascii_lowercase() as u8; (width * height) as usize],
+            logger,
         }
     }
 
@@ -82,23 +109,20 @@ impl Emulator {
 
     pub fn set_char(&mut self, x: u8, y: u8, c: char) {
         if x >= self.screen_width || y >= self.screen_height {
-            Self::log(Error, "Coordinates out of bounds");
+            self.logger.log(Error, "Coordinates out of bounds");
             return;
         }
         if !c.is_ascii() {
-            Self::log(Error, "Character is not ASCII");
+            self.logger.log(Error, "Character is not ASCII");
             return;
         }
         self.text[(y as usize * self.screen_width as usize + x as usize) as usize] = c as u8;
+        let text = self.text
+            .iter()
+            .map(|&b| b as char)
+            .collect::<String>();
+        self.logger.log(Info, &text);
         self.screen_modified = true;
-    }
-
-    fn log(log_level: LogLevel, message: &str) {
-        match log_level {
-            LogLevel::Info => println!("[INFO] {}", message),
-            LogLevel::Warning => println!("[WARNING] {}", message),
-            LogLevel::Error => eprintln!("[ERROR] {}", message),
-        }
     }
 }
 
@@ -106,6 +130,7 @@ pub struct Display {
     ctrl: NonNull<u8>,
     data: NonNull<u8>,
     cursor_position: (u8, u8),
+    logger: Logger,
 }
 
 impl Display {
@@ -121,11 +146,12 @@ impl Display {
     pub const CURSOR_LEFT: u8 = 0b0000_0100;
     pub const CURSOR_RIGHT: u8 = 0b0000_1100;
 
-    pub fn new(data: *const u8, ctrl: *const u8) -> Self {
+    pub fn new(data: *const u8, ctrl: *const u8, logger: Logger) -> Self {
         Display {
             ctrl: NonNull::new(ctrl as *mut u8).unwrap(),
             data: NonNull::new(data as *mut u8).unwrap(),
             cursor_position: (0, 0),
+            logger,
         }
     }
 
@@ -134,7 +160,7 @@ impl Display {
         let data = unsafe { self.data.read() };
 
         if ctrl & Self::DISPLAY_ENABLE != 0 {
-            Emulator::log(LogLevel::Info, "Display enabled");
+            self.logger.log(LogLevel::Info, "Display enabled");
             if ctrl & Self::DISPLAY_WRITE_OR_CMOVE != 0 {
                 let (x, y) = self.cursor_position;
                 let c = data as char;

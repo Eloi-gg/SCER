@@ -306,14 +306,14 @@ impl Machine {
             Instruction::Jeq(op) => match op {
                 crate::program::OtherOp::Immediate(imm) => {
                     if self.f & Self::ZERO_FLAG != 0 {
-                        let z = self.pc; // Store current PC in Z register
+                        let z = self.pc + 3; // Store current PC in Z register
                         self.pc = (imm - 3) as u16;
                         self.z = z;
                     }
                 }
                 crate::program::OtherOp::Register(reg) => {
                     if self.f & Self::ZERO_FLAG != 0 {
-                        let z = self.pc; // Store current PC in Z register
+                        let z = self.pc + 3; // Store current PC in Z register
                         self.pc = self.get_register_value(reg) - 3;
                         self.z = z;
                     }
@@ -322,14 +322,14 @@ impl Machine {
             Instruction::Jlt(op) => match op {
                 crate::program::OtherOp::Immediate(imm) => {
                     if self.f & Self::NEGATIVE_FLAG == 0 {
-                        let z = self.pc; // Store current PC in Z register
+                        let z = self.pc + 3; // Store current PC in Z register
                         self.pc = (imm - 3) as u16;
                         self.z = z;
                     }
                 }
                 crate::program::OtherOp::Register(reg) => {
                     if self.f & Self::NEGATIVE_FLAG == 0 {
-                        let z = self.pc; // Store current PC in Z register
+                        let z = self.pc + 3; // Store current PC in Z register
                         self.pc = self.get_register_value(reg) - 3;
                         self.z = z;
                     }
@@ -338,13 +338,14 @@ impl Machine {
             Instruction::Jne(op) => match op {
                 crate::program::OtherOp::Immediate(imm) => {
                     if self.f & Self::ZERO_FLAG == 0 {
-                        self.z = self.pc + 3; // Store current PC in Z register
+                        let z = self.pc + 3; // Store current PC in Z register
                         self.pc = (imm - 3) as u16;
+                        self.z = z;
                     }
                 }
                 crate::program::OtherOp::Register(reg) => {
                     if self.f & Self::ZERO_FLAG == 0 {
-                        let z = self.pc; // Store current PC in Z register
+                        let z = self.pc + 3; // Store current PC in Z register
                         self.pc = self.get_register_value(reg) - 3;
                         self.z = z;
                     }

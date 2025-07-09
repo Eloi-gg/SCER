@@ -1,5 +1,6 @@
 use std::env;
 use std::io::{Read, Write};
+use std::rc::Rc;
 
 use machine::Machine;
 
@@ -18,8 +19,6 @@ struct Args {
     /// enable debug mode
     #[argh(switch, short = 'd')]
     debug: bool,
-
-
 }
 
 fn display_logo() {
@@ -76,6 +75,8 @@ fn clr() {
 }
 
 fn main() {
+    use emulator::LogLevel::*;
+
     display_logo();
 
     // Load arguments
@@ -90,11 +91,14 @@ fn main() {
     clr();
 
     // Initialize emulator and machine
-    let mut emulator = emulator::Emulator::new(16, 2);
+    let mut logger = emulator::Logger::new();
+    logger.log(Info, "Starting SCER Runner...");
+    let mut emulator = emulator::Emulator::new(16, 2, logger.clone());
     let mut machine = Machine::new();
     let mut display = emulator::Display::new(
         machine.get_display_addresses().0,
-        machine.get_display_addresses().1
+        machine.get_display_addresses().1,
+        logger.clone(),
     );
     machine.load(&program);
 
@@ -105,6 +109,8 @@ fn main() {
     machine.set_memory(0xF000, 10);
 
     if debug_mode {
+        const NUM_OLD_MESSAGES: usize = 8;
+        let mut last_num_msg: usize = 0;
         print!("{}\n", emulator.screen());
         print!("{:?}", machine);
 
@@ -113,18 +119,39 @@ fn main() {
         for _step in 0.. {
             machine.step();
             display.update(&mut emulator);
-            
+
             if machine.get_memory(Machine::MEMORY_END.try_into().unwrap()) != 0 {
                 println!("Program finished.");
                 break;
             }
 
             clr();
-
-            // TODO: update display
             print!("{}\n", emulator.screen());
             print!("{:?}", machine);
 
+            let logger = logger.get_logs();
+
+            // Log old messages
+            println!("Old messages:");
+            let log_len = logger.len();
+            for msg in logger[last_num_msg.saturating_sub(NUM_OLD_MESSAGES)..last_num_msg].iter() {
+                if !msg.is_empty() {
+                    println!("{}", msg);
+                }
+            }
+            println!("-------------------------------");
+            // Log new messages
+            if last_num_msg != log_len {
+                println!("New messages:");
+                for msg in logger[last_num_msg..log_len].iter() {
+                    if !msg.is_empty() {
+                        println!("{}", msg);
+                    }
+                }
+                last_num_msg = log_len;
+                println!("-------------------------------");
+            }
+            
             let _kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
         }
     } else {
