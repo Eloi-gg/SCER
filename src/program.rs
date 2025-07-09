@@ -51,7 +51,20 @@ impl Register {
 fn try_immediate(s: &str) -> Result<u16, ParsingError> {
     if s.starts_with("0x") {
         u16::from_str_radix(&s[2..], 16).map_err(|_| ParsingError::InvalidInstruction)
-    } else {
+    } else if s.starts_with("0b") {
+        u16::from_str_radix(&s[2..], 2).map_err(|_| ParsingError::InvalidInstruction)
+    } else if s.starts_with("'") {
+        char::try_from(s.chars().nth(1).ok_or(ParsingError::InvalidInstruction)?)
+            .map_err(|_| ParsingError::InvalidInstruction)
+            .and_then(|c| {
+                if c.is_ascii() {
+                    Ok(c as u16)
+                } else {
+                    Err(ParsingError::InvalidInstruction)
+                }
+            })
+    }
+    else {
         s.parse::<u16>()
             .map_err(|_| ParsingError::InvalidInstruction)
     }
@@ -622,6 +635,8 @@ mod compilation {
         let code = "add $a0 $r1 1
 sub $a1 $r0 255 # comment
 and $a2 $a2 0xFF # comment b
+add $a2 $a2 0b11111111 # binary
+add $a2 $a2 0b10000000 # binary b
 or $r0 $f 123
 xor $r1 $a2 0xFF
 asl $r2 $a0 1
@@ -646,6 +661,16 @@ asr $z $z 4
             dest: Register::A2,
             reg_a: Register::A2,
             imm: 0xFF,
+        }));
+        expected_instructions.push(Instruction::Add(ArithmeticOp::Immediate {
+            dest: Register::A2,
+            reg_a: Register::A2,
+            imm: 0b11111111,
+        }));
+        expected_instructions.push(Instruction::Add(ArithmeticOp::Immediate {
+            dest: Register::A2,
+            reg_a: Register::A2,
+            imm: 0b10000000,
         }));
         expected_instructions.push(Instruction::Or(ArithmeticOp::Immediate {
             dest: Register::R0,
@@ -824,13 +849,21 @@ sw $a0 $a0 # same register
     #[test]
     fn parsing_move() {
         let code = "mov $r1 1
-mov $z 0x1234 # immediate";
-
+mov $z 0x1234 # immediate
+mov $a2 'a # char;
+mov $a2 'E # char;
+mov $a2 '4 # char;
+mov $a2 '? # char;
+";
         let parsed_instructions = parse_instructions(&code);
         let mut expected_instructions = Vec::new();
 
         expected_instructions.push(Instruction::Mov(Register::R1, 1));
         expected_instructions.push(Instruction::Mov(Register::Z, 0x1234));
+        expected_instructions.push(Instruction::Mov(Register::A2, 'a' as u16));
+        expected_instructions.push(Instruction::Mov(Register::A2, 'E' as u16));
+        expected_instructions.push(Instruction::Mov(Register::A2, '4' as u16));
+        expected_instructions.push(Instruction::Mov(Register::A2, '?' as u16));
 
         assert_sequence(&parsed_instructions, &expected_instructions);
 

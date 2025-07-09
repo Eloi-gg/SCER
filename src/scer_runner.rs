@@ -92,6 +92,10 @@ fn main() {
     // Initialize emulator and machine
     let mut emulator = emulator::Emulator::new(16, 2);
     let mut machine = Machine::new();
+    let mut display = emulator::Display::new(
+        machine.get_display_addresses().0,
+        machine.get_display_addresses().1
+    );
     machine.load(&program);
 
     emulator.clear_screen();
@@ -108,6 +112,7 @@ fn main() {
 
         for _step in 0.. {
             machine.step();
+            display.update(&mut emulator);
             
             if machine.get_memory(Machine::MEMORY_END.try_into().unwrap()) != 0 {
                 println!("Program finished.");

@@ -102,7 +102,7 @@ impl Emulator {
     }
 }
 
-struct Display {
+pub struct Display {
     ctrl: NonNull<u8>,
     data: NonNull<u8>,
     cursor_position: (u8, u8),
@@ -110,38 +110,37 @@ struct Display {
 
 impl Display {
     // Pins
-    const DISPLAY_ENABLE: u8 = 0b1000_0000;
-    const DISPLAY_WRITE: u8 = 0b0100_0000;
-    const DISPLAY_CLEAR: u8 = 0b0010_0000;
-    const DISPLAY_CURSOR_MOVE: u8 = 0b0001_0000;
+    pub const DISPLAY_ENABLE: u8 = 0b1000_0000;
+    pub const DISPLAY_WRITE_OR_CMOVE: u8 = 0b0100_0000;
+    pub const DISPLAY_CLEAR_OR_CRESET: u8 = 0b0010_0000;
 
     // Cursor helpers
-    const CURSOR_MASK: u8 = 0b0000_1100;
-    const CURSOR_UP: u8 = 0b0000_1000;
-    const CURSOR_DOWN: u8 = 0b0000_0000;
-    const CURSOR_LEFT: u8 = 0b0000_0100;
-    const CURSOR_RIGHT: u8 = 0b0000_1100;
+    pub const CURSOR_MASK: u8 = 0b0000_1100;
+    pub const CURSOR_UP: u8 = 0b0000_1000;
+    pub const CURSOR_DOWN: u8 = 0b0000_0000;
+    pub const CURSOR_LEFT: u8 = 0b0000_0100;
+    pub const CURSOR_RIGHT: u8 = 0b0000_1100;
 
-    fn new(data: *const u8, ctrl: *const u8) -> Self {
+    pub fn new(data: *const u8, ctrl: *const u8) -> Self {
         Display {
             ctrl: NonNull::new(ctrl as *mut u8).unwrap(),
-            data: NonNull::new(ctrl as *mut u8).unwrap(),
+            data: NonNull::new(data as *mut u8).unwrap(),
             cursor_position: (0, 0),
         }
     }
 
-    fn update(&mut self, emulator: &mut Emulator) {
+    pub fn update(&mut self, emulator: &mut Emulator) {
         let ctrl = unsafe { self.ctrl.read() };
         let data = unsafe { self.data.read() };
 
         if ctrl & Self::DISPLAY_ENABLE != 0 {
-            if ctrl & Self::DISPLAY_WRITE != 0 {
+            Emulator::log(LogLevel::Info, "Display enabled");
+            if ctrl & Self::DISPLAY_WRITE_OR_CMOVE != 0 {
                 let (x, y) = self.cursor_position;
                 let c = data as char;
                 emulator.set_char(x, y, c);
-            } else if ctrl & Self::DISPLAY_CLEAR != 0 {
-                emulator.clear_screen();
-            } else if ctrl & Self::DISPLAY_CURSOR_MOVE != 0 {
+            } else {
+                // Cursor move
                 let move_cmd = ctrl & Self::CURSOR_MASK;
                 match move_cmd {
                     Self::CURSOR_UP => self.cursor_position.1 += 1,
@@ -152,6 +151,12 @@ impl Display {
                         unreachable!();
                     }
                 }
+            }
+            if ctrl & Self::DISPLAY_CLEAR_OR_CRESET != 0 {
+                emulator.clear_screen();
+            } else {
+                // Cursor reset
+                self.cursor_position = (0, 0);
             }
         }
     }

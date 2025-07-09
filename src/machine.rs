@@ -15,6 +15,8 @@ pub struct Machine {
 
     // memory: 2^16 bytes of size 16
     memory: [u16; 0xFFFF + 1],
+    display_ctrl: u8,
+    display_data: u8,
 }
 
 use std::fmt::Debug;
@@ -25,7 +27,7 @@ use crate::program::{ArithmeticOp, Instruction, Register};
 /// 0x0000 - 0x3FFF: program memory
 /// 0x4000 - 0x5FFF: stack memory
 /// 0x6000 - 0xBFFF: heap memory
-/// 0xC000 - 0xEFFF: io memory
+/// 0xC000 - 0xEFFF: IO memory
 /// 0xF000 - 0xFFFF: testing
 
 /// // IO memory layout:
@@ -62,6 +64,8 @@ impl Machine {
             sp: 0,
 
             memory: [0; 0x10000],
+            display_ctrl: 0,
+            display_data: 0,
         }
     }
 
@@ -90,10 +94,11 @@ impl Machine {
         self.sp = Self::STACK_MEM_START as u16;
     }
 
-    pub fn get_display_addresses(&self) -> (*const u16, *const u16) {
-        let display_control = &self.memory[Self::DISPLAY_CTRL_ADDR];
-        let display_data = &self.memory[Self::DISPLAY_DATA_ADDR];
-        (display_control, display_data)
+    pub fn get_display_addresses(&self) -> (*const u8, *const u8) {
+        (
+            &self.display_data as *const u8,
+            &self.display_ctrl as *const u8,
+        )
     }
 
     fn fetch(&self) -> u32 {
@@ -191,6 +196,58 @@ impl Machine {
                     self.set_register_value(dest, result);
                 }
             },
+            Instruction::Or(op) => match op {
+                ArithmeticOp::Immediate { dest, reg_a, imm } => {
+                    let value_a = self.get_register_value(reg_a);
+                    let result = value_a | imm as u16;
+                    self.set_register_value(dest, result);
+                }
+                ArithmeticOp::Register { dest, reg_a, reg_b } => {
+                    let value_a = self.get_register_value(reg_a);
+                    let value_b = self.get_register_value(reg_b);
+                    let result = value_a | value_b;
+                    self.set_register_value(dest, result);
+                }
+            },
+            Instruction::Xor(op) => match op {
+                ArithmeticOp::Immediate { dest, reg_a, imm } => {
+                    let value_a = self.get_register_value(reg_a);
+                    let result = value_a ^ imm as u16;
+                    self.set_register_value(dest, result);
+                }
+                ArithmeticOp::Register { dest, reg_a, reg_b } => {
+                    let value_a = self.get_register_value(reg_a);
+                    let value_b = self.get_register_value(reg_b);
+                    let result = value_a ^ value_b;
+                    self.set_register_value(dest, result);
+                }
+            },
+            Instruction::Asl(op) => match op {
+                ArithmeticOp::Immediate { dest, reg_a, imm } => {
+                    let value = self.get_register_value(reg_a);
+                    let result = value.wrapping_shl(imm as u32);
+                    self.set_register_value(dest, result);
+                }
+                ArithmeticOp::Register { dest, reg_a, reg_b } => {
+                    let value_a = self.get_register_value(reg_a);
+                    let value_b = self.get_register_value(reg_b);
+                    let result = value_a.wrapping_shl(value_b as u32);
+                    self.set_register_value(dest, result);
+                }
+            },
+            Instruction::Asr(op) => match op {
+                ArithmeticOp::Immediate { dest, reg_a, imm } => {
+                    let value = self.get_register_value(reg_a);
+                    let result = value.wrapping_shr(imm as u32);
+                    self.set_register_value(dest, result);
+                }
+                ArithmeticOp::Register { dest, reg_a, reg_b } => {
+                    let value_a = self.get_register_value(reg_a);
+                    let value_b = self.get_register_value(reg_b);
+                    let result = value_a.wrapping_shr(value_b as u32);
+                    self.set_register_value(dest, result);
+                }
+            },
             Instruction::Cmp(op) => {
                 match op {
                     crate::program::TwoArgsOp::Immediate(reg, imm) => {
@@ -223,31 +280,29 @@ impl Machine {
                 self.set_register_value(reg, value);
             }
             Instruction::Lw(op) => match op {
+                // TODO
                 crate::program::TwoArgsOp::Immediate(reg, imm) => {
-                    let address = imm as usize;
-                    let value = unsafe { *(self.memory.as_ptr().add(address) as *const u16) };
+                    let address = imm;
+                    let value = self.get_memory(address);
                     self.set_register_value(reg, value);
                 }
                 crate::program::TwoArgsOp::Register(reg, addr_reg) => {
-                    let address = self.get_register_value(addr_reg) as usize;
-                    let value = unsafe { *(self.memory.as_ptr().add(address) as *const u16) };
+                    let address = self.get_register_value(addr_reg);
+                    let value = self.get_memory(address);
                     self.set_register_value(reg, value);
                 }
             },
             Instruction::Sw(op) => match op {
+                // TODO
                 crate::program::TwoArgsOp::Immediate(reg, imm) => {
-                    let address = imm as usize;
+                    let address = imm;
                     let value = self.get_register_value(reg);
-                    unsafe {
-                        *(self.memory.as_mut_ptr().add(address) as *mut u16) = value;
-                    }
+                    self.set_memory(address, value);
                 }
                 crate::program::TwoArgsOp::Register(reg, addr_reg) => {
-                    let address = self.get_register_value(addr_reg) as usize;
+                    let address = self.get_register_value(addr_reg);
                     let value = self.get_register_value(reg);
-                    unsafe {
-                        *(self.memory.as_mut_ptr().add(address) as *mut u16) = value;
-                    }
+                    self.set_memory(address, value);
                 }
             },
             Instruction::Jeq(op) => match op {
@@ -307,12 +362,23 @@ impl Machine {
             address, value
         );
         assert!(address <= Self::MEMORY_END as u16, "Address out of bounds");
-        unsafe {
-            *(self.memory_mut().add(address as usize) as *mut u16) = value;
+        if address == Self::DISPLAY_CTRL_ADDR as u16 {
+            self.display_ctrl = value as u8;
+        } else if address == Self::DISPLAY_DATA_ADDR as u16 {
+            self.display_data = value as u8;
+        } else {
+            unsafe {
+                *(self.memory_mut().add(address as usize) as *mut u16) = value;
+            }
         }
     }
 
     pub fn get_memory(&self, address: u16) -> u16 {
+        if address == Self::DISPLAY_CTRL_ADDR as u16 {
+            return self.display_ctrl as u16;
+        } else if address == Self::DISPLAY_DATA_ADDR as u16 {
+            return self.display_data as u16;
+        }
         assert!(address <= Self::MEMORY_END as u16, "Address out of bounds");
         unsafe { *(self.memory().add(address as usize) as *const u16) }
     }
@@ -406,8 +472,8 @@ mod programs {
             assert_eq!(
                 fib_numbers,
                 vec![
-                    0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610,
-                    987, 1597, 2584, 4181, 6765, 10946, 17711, 28657
+                    0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584,
+                    4181, 6765, 10946, 17711, 28657
                 ]
             );
         }
