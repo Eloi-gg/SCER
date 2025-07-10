@@ -91,7 +91,7 @@ fn main() {
     clr();
 
     // Initialize emulator and machine
-    let mut logger = emulator::Logger::new();
+    let logger = emulator::Logger::new();
     logger.log(Info, "Starting SCER Runner...");
     let mut emulator = emulator::Emulator::new(16, 2, logger.clone());
     let mut machine = Machine::new();
@@ -140,28 +140,32 @@ fn main() {
                 }
             }
             println!("-------------------------------");
+
             // Log new messages
+            println!("New messages:");
             if last_num_msg != log_len {
-                println!("New messages:");
                 for msg in logger[last_num_msg..log_len].iter() {
                     if !msg.is_empty() {
                         println!("{}", msg);
                     }
                 }
                 last_num_msg = log_len;
-                println!("-------------------------------");
             }
-            
+            println!("-------------------------------");
+
             let _kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
         }
     } else {
         for _step in 0.. {
             machine.step();
+            display.update(&mut emulator);
+            clr();
+            print!("{}\n", emulator.screen());
             if machine.get_memory(Machine::MEMORY_END.try_into().unwrap()) != 0 {
                 println!("Program finished.");
+                let _kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
                 break;
             }
-            clr();
         }
     }
     println!();

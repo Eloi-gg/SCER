@@ -20,8 +20,6 @@ impl Logger {
     }
 }
 
-
-
 pub struct Emulator {
     screen: String,
     screen_modified: bool,
@@ -37,8 +35,8 @@ pub(crate) enum LogLevel {
     Error,
 }
 
-use std::{ptr::NonNull, rc::Rc};
 use std::cell::RefCell;
+use std::{ptr::NonNull, rc::Rc};
 
 use LogLevel::*;
 
@@ -117,11 +115,11 @@ impl Emulator {
             return;
         }
         self.text[(y as usize * self.screen_width as usize + x as usize) as usize] = c as u8;
-        let text = self.text
-            .iter()
-            .map(|&b| b as char)
-            .collect::<String>();
-        self.logger.log(Info, &text);
+        let text = self.text.iter().map(|&b| b as char).collect::<String>();
+        self.logger
+            .log(Info, &format!("Setting character {} at ({}, {})", c, x, y));
+        self.logger
+            .log(Info, &format!("Current text in emulator: {}", text));
         self.screen_modified = true;
     }
 }
@@ -136,8 +134,9 @@ pub struct Display {
 impl Display {
     // Pins
     pub const DISPLAY_ENABLE: u8 = 0b1000_0000;
-    pub const DISPLAY_WRITE_OR_CMOVE: u8 = 0b0100_0000;
-    pub const DISPLAY_CLEAR_OR_CRESET: u8 = 0b0010_0000;
+    pub const DISPLAY_WRITE: u8 = 0b0100_0000;
+    pub const DISPLAY_CURSOR_MOVE: u8 = 0b0010_0000; // TODO: remove
+    pub const DISPLAY_CLEAR_OR_CRESET: u8 = 0b0001_0000;
 
     // Cursor helpers
     pub const CURSOR_MASK: u8 = 0b0000_1100;
@@ -161,13 +160,25 @@ impl Display {
 
         if ctrl & Self::DISPLAY_ENABLE != 0 {
             self.logger.log(LogLevel::Info, "Display enabled");
-            if ctrl & Self::DISPLAY_WRITE_OR_CMOVE != 0 {
+            if ctrl & Self::DISPLAY_WRITE != 0 {
                 let (x, y) = self.cursor_position;
                 let c = data as char;
                 emulator.set_char(x, y, c);
-            } else {
+            } else if ctrl & Self::DISPLAY_CURSOR_MOVE == 0 {
+                // No cursor move
+                if ctrl & Self::DISPLAY_CLEAR_OR_CRESET != 0 {
+                    // Clear screen
+                    self.logger.log(LogLevel::Info, "Clearing screen");
+                    emulator.clear_screen();
+                } else {
+                    // Cursor reset
+                    self.logger.log(LogLevel::Info, "Resetting cursor position");
+                    self.cursor_position = (0, 0);
+                }
+            }
+            let move_cmd = ctrl & Self::CURSOR_MASK;
+            if move_cmd != 0 {
                 // Cursor move
-                let move_cmd = ctrl & Self::CURSOR_MASK;
                 match move_cmd {
                     Self::CURSOR_UP => self.cursor_position.1 += 1,
                     Self::CURSOR_DOWN => self.cursor_position.1 -= 1,
@@ -177,12 +188,13 @@ impl Display {
                         unreachable!();
                     }
                 }
-            }
-            if ctrl & Self::DISPLAY_CLEAR_OR_CRESET != 0 {
-                emulator.clear_screen();
-            } else {
-                // Cursor reset
-                self.cursor_position = (0, 0);
+                self.logger.log(
+                    LogLevel::Info,
+                    &format!(
+                        "Cursor move command: {:#04x}, new cursor position: {:?}",
+                        move_cmd, self.cursor_position
+                    ),
+                );
             }
         }
     }

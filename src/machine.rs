@@ -386,10 +386,6 @@ impl Machine {
     }
 
     pub fn set_memory(&mut self, address: u16, value: u16) {
-        println!(
-            "Setting memory at address {:#06X} to value {:#06X}",
-            address, value
-        );
         assert!(address <= Self::MEMORY_END as u16, "Address out of bounds");
         if address == Self::DISPLAY_CTRL_ADDR as u16 {
             self.display_ctrl = value as u8;
