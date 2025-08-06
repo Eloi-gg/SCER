@@ -1,6 +1,5 @@
 use std::env;
 use std::io::{Read, Write};
-use std::rc::Rc;
 
 use machine::Machine;
 

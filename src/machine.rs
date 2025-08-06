@@ -19,7 +19,11 @@ pub struct Machine {
     display_data: u8,
 }
 
-use std::fmt::Debug;
+struct Bridge {
+    display_ctrl: NonNull<u8>
+}
+
+use std::{fmt::Debug, ptr::NonNull};
 
 use crate::program::{ArithmeticOp, Instruction, Register};
 
@@ -39,6 +43,7 @@ impl Machine {
     const PROGRAM_MEM_START: usize = 0x0000;
     const STACK_MEM_START: usize = 0x4000;
     const HEAP_MEM_START: usize = 0x6000;
+    const IVT_MEM_START: usize = 0xA000; // Interrupt Vector Table
     const IO_MEM_START: usize = 0xC000;
     const TEST_MEM_START: usize = 0xF000;
     pub const MEMORY_END: usize = 0xFFFF;
@@ -78,6 +83,29 @@ impl Machine {
                 program.len(),
             );
         }
+    }
+
+    pub fn load_at(&mut self, program: &[u8], address: u16) {
+        assert!(address as usize + program.len() <= Self::STACK_MEM_START);
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                program.as_ptr(),
+                self.memory_mut().add(address as usize) as *mut u8,
+                program.len(),
+            );
+        }
+    }
+
+    pub fn interrupt(&mut self, irq: u8) {
+        use crate::program::OtherOp;
+        assert!(irq < 16, "Irq should be less than 16");
+        // Save current PC to stack
+        let instr = Instruction::Push(OtherOp::Immediate(self.pc));
+        self.execute(instr);
+        // Set PC to the interrupt vector address
+        let ivt_address = Self::IVT_MEM_START + (irq as usize * 0x0200);
+        self.pc = ivt_address as u16;
+
     }
 
     pub fn reset_registers(&mut self) {
