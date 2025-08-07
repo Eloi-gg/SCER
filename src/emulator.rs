@@ -126,8 +126,8 @@ impl Emulator {
 }
 
 pub struct Display {
-    ctrl: NonNull<u8>,
-    data: NonNull<u8>,
+    ctrl: u8,
+    data: u8,
     cursor_position: (u8, u8),
     logger: Logger,
 }
@@ -146,28 +146,25 @@ impl Display {
     pub const CURSOR_LEFT: u8 = 0b0000_0100;
     pub const CURSOR_RIGHT: u8 = 0b0000_1100;
 
-    pub fn new(data: *const u8, ctrl: *const u8, logger: Logger) -> Self {
+    pub fn new(logger: Logger) -> Self {
         Display {
-            ctrl: NonNull::new(ctrl as *mut u8).unwrap(),
-            data: NonNull::new(data as *mut u8).unwrap(),
+            ctrl: 0,
+            data: 0,
             cursor_position: (0, 0),
             logger,
         }
     }
 
     pub fn update(&mut self, emulator: &mut Emulator) {
-        let ctrl = unsafe { self.ctrl.read() };
-        let data = unsafe { self.data.read() };
-
-        if ctrl & Self::DISPLAY_ENABLE != 0 {
+        if self.ctrl & Self::DISPLAY_ENABLE != 0 {
             self.logger.log(LogLevel::Info, "Display enabled");
-            if ctrl & Self::DISPLAY_WRITE != 0 {
+            if self.ctrl & Self::DISPLAY_WRITE != 0 {
                 let (x, y) = self.cursor_position;
-                let c = data as char;
+                let c = self.data as char;
                 emulator.set_char(x, y, c);
-            } else if ctrl & Self::DISPLAY_CURSOR_MOVE == 0 {
+            } else if self.ctrl & Self::DISPLAY_CURSOR_MOVE == 0 {
                 // No cursor move
-                if ctrl & Self::DISPLAY_CLEAR_OR_CRESET != 0 {
+                if self.ctrl & Self::DISPLAY_CLEAR_OR_CRESET != 0 {
                     // Clear screen
                     self.logger.log(LogLevel::Info, "Clearing screen");
                     emulator.clear_screen();
@@ -177,7 +174,7 @@ impl Display {
                     self.cursor_position = (0, 0);
                 }
             }
-            let move_cmd = ctrl & Self::CURSOR_MASK;
+            let move_cmd = self.ctrl & Self::CURSOR_MASK;
             if move_cmd != 0 {
                 // Cursor move
                 match move_cmd {
@@ -202,12 +199,13 @@ impl Display {
 }
 
 pub struct Keyboard {
+    logger: Logger,
     keycode: u8,
 }
 
 impl Keyboard {
-    pub fn new() -> Self {
-        Keyboard { keycode: 0 }
+    pub fn new(logger: Logger) -> Self {
+        Keyboard { logger, keycode: 0 }
     }
 
     pub fn poll(&mut self) -> bool {
@@ -215,6 +213,7 @@ impl Keyboard {
 
         if let Ok(true) = crossterm::event::poll(std::time::Duration::from_millis(100)) {
             if let Ok(Event::Key(KeyEvent { code, kind, .. })) = event::read() {
+                self.logger.log(Info, &format!("Key event registered: {:?}", code));
                 const IS_CHAR: u8 = 0b0100_0000;
                 let key_code = match code {
                     KeyCode::Char(c) => {

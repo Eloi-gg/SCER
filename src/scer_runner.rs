@@ -6,7 +6,6 @@ use machine::Machine;
 mod emulator;
 mod machine;
 mod program;
-mod utils;
 
 #[derive(argh::FromArgs)]
 /// Scer Runner - A simple SCER program runner
@@ -92,13 +91,10 @@ fn main() {
     // Initialize emulator and machine
     let logger = emulator::Logger::new();
     logger.log(Info, "Starting SCER Runner...");
+    let mut display = emulator::Display::new(logger.clone());
+    let mut keyboard = emulator::Keyboard::new(logger.clone());
     let mut emulator = emulator::Emulator::new(16, 2, logger.clone());
     let mut machine = Machine::new();
-    let mut display = emulator::Display::new(
-        machine.get_display_addresses().0,
-        machine.get_display_addresses().1,
-        logger.clone(),
-    );
     machine.load(&program);
 
     emulator.clear_screen();

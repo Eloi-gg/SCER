@@ -15,22 +15,53 @@ pub struct Machine {
 
     // memory: 2^16 bytes of size 16
     memory: [u16; 0xFFFF + 1],
-    display_ctrl: u8,
-    display_data: u8,
+    bridge: Bridge,
 }
 
 struct Bridge {
-    display_ctrl: NonNull<u8>
+    addresses: HashMap<u16, NonNull<u8>>,
 }
 
-use std::{fmt::Debug, ptr::NonNull};
+impl Bridge {
+    fn new() -> Self {
+        Self {
+            addresses: HashMap::new(),
+        }
+    }
+
+    fn register(&mut self, memory_address: u16, linked_address: &mut u8) {
+        self.addresses.insert(
+            memory_address,
+            NonNull::new(linked_address as *mut u8).unwrap(),
+        );
+    }
+
+    fn try_set(&mut self, memory_address: u16, value: u8) -> bool {
+        if self.addresses.contains_key(&memory_address) {
+            unsafe {
+                *self.addresses[&memory_address].as_ptr() = value;
+            }
+            return true;
+        }
+        false
+    }
+
+    fn try_get(&self, memory_address: u16) -> Option<u8> {
+        self.addresses
+            .get(&memory_address)
+            .map(|nn| unsafe { *nn.as_ptr() })
+    }
+}
 
 use crate::program::{ArithmeticOp, Instruction, Register};
+use std::collections::HashMap;
+use std::{fmt::Debug, ptr::NonNull};
 
 /// Memory layout:
 /// 0x0000 - 0x3FFF: program memory
 /// 0x4000 - 0x5FFF: stack memory
-/// 0x6000 - 0xBFFF: heap memory
+/// 0x6000 - 0x9FFF: heap memory
+/// 0x9000 - 0xBFFF: interrupt vector table
 /// 0xC000 - 0xEFFF: IO memory
 /// 0xF000 - 0xFFFF: testing
 
@@ -69,8 +100,7 @@ impl Machine {
             sp: Self::STACK_MEM_START as u16,
 
             memory: [0; 0x10000],
-            display_ctrl: 0,
-            display_data: 0,
+            bridge: Bridge::new(),
         }
     }
 
@@ -96,6 +126,13 @@ impl Machine {
         }
     }
 
+    pub fn add_peripheral(&mut self, mm_address: u16, linked_addr: &mut u8) {
+        assert!(mm_address >= Self::IO_MEM_START as u16);
+        assert!(mm_address < Self::TEST_MEM_START as u16);
+
+        self.bridge.register(mm_address, linked_addr)
+    }
+
     pub fn interrupt(&mut self, irq: u8) {
         use crate::program::OtherOp;
         assert!(irq < 16, "Irq should be less than 16");
@@ -105,7 +142,6 @@ impl Machine {
         // Set PC to the interrupt vector address
         let ivt_address = Self::IVT_MEM_START + (irq as usize * 0x0200);
         self.pc = ivt_address as u16;
-
     }
 
     pub fn reset_registers(&mut self) {
@@ -120,13 +156,6 @@ impl Machine {
 
         self.pc = Self::PROGRAM_MEM_START as u16;
         self.sp = Self::STACK_MEM_START as u16;
-    }
-
-    pub fn get_display_addresses(&self) -> (*const u8, *const u8) {
-        (
-            &self.display_data as *const u8,
-            &self.display_ctrl as *const u8,
-        )
     }
 
     fn fetch(&self) -> u32 {
@@ -391,7 +420,7 @@ impl Machine {
                     self.sp += 1;
                     assert!(self.sp < Self::HEAP_MEM_START as u16, "Stack overflow");
                 }
-            }
+            },
             Instruction::Pop(reg) => {
                 assert!(self.sp > Self::STACK_MEM_START as u16, "Stack underflow");
                 self.sp -= 1;
@@ -415,10 +444,7 @@ impl Machine {
 
     pub fn set_memory(&mut self, address: u16, value: u16) {
         assert!(address <= Self::MEMORY_END as u16, "Address out of bounds");
-        if address == Self::DISPLAY_CTRL_ADDR as u16 {
-            self.display_ctrl = value as u8;
-        } else if address == Self::DISPLAY_DATA_ADDR as u16 {
-            self.display_data = value as u8;
+        if self.bridge.try_set(address, value as u8) {
         } else {
             unsafe {
                 *(self.memory_mut().add(address as usize) as *mut u16) = value;
@@ -427,13 +453,12 @@ impl Machine {
     }
 
     pub fn get_memory(&self, address: u16) -> u16 {
-        if address == Self::DISPLAY_CTRL_ADDR as u16 {
-            return self.display_ctrl as u16;
-        } else if address == Self::DISPLAY_DATA_ADDR as u16 {
-            return self.display_data as u16;
+        if let Some(value) = self.bridge.try_get(address) {
+            value as u16
+        } else {
+            assert!(address <= Self::MEMORY_END as u16, "Address out of bounds");
+            unsafe { *(self.memory().add(address as usize) as *const u16) }
         }
-        assert!(address <= Self::MEMORY_END as u16, "Address out of bounds");
-        unsafe { *(self.memory().add(address as usize) as *const u16) }
     }
 }
 
@@ -527,7 +552,11 @@ sw  $a2 test_end_address
         for (i, expected_value) in expected_output.into_iter().enumerate() {
             unsafe {
                 let output_addr = machine.memory().add(PROGRAM_OUTPUT_ADDR as usize + i);
-                assert_eq!(*output_addr, expected_value as u16, "Output mismatch at index {}", i);
+                assert_eq!(
+                    *output_addr, expected_value as u16,
+                    "Output mismatch at index {}",
+                    i
+                );
             }
         }
     }
