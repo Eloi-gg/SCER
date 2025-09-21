@@ -2,6 +2,7 @@ use std::env;
 use std::io::{Read, Write};
 
 use machine::Machine;
+use crate::emulator::LogLevel;
 
 mod emulator;
 mod machine;
@@ -92,7 +93,7 @@ fn main() {
     let logger = emulator::Logger::new();
     logger.log(Info, "Starting SCER Runner...");
     let mut display = emulator::Display::new(logger.clone());
-    let mut keyboard = emulator::Keyboard::new(logger.clone());
+    let mut keyboard = emulator::Keyboard::new(logger.clone(), debug_mode);
     let mut emulator = emulator::Emulator::new(16, 2, logger.clone());
     let mut machine = Machine::new();
     machine.load(&program);
@@ -115,6 +116,13 @@ fn main() {
         let _kb_in_len: usize = std::io::stdin().read(&mut buffer).unwrap();
 
         for _step in 0.. {
+            // Get KB input
+            if let Ok(kc) = keyboard.try_get_keycode() {
+                logger.log(Info, &format!("last kc = {kc}"))
+            } else {
+                logger.log(LogLevel::Error, "no lock")
+            }
+
             machine.step();
             display.update(&mut emulator);
 

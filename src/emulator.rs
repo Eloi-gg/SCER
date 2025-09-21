@@ -206,50 +206,67 @@ impl Display {
     }
 }
 
+use std::sync::*;
+use std::thread::JoinHandle;
+
 pub struct Keyboard {
     logger: Logger,
-    keycode: u8,
+    keycode: Arc<RwLock<u8>>,
+    thread: JoinHandle<()>
 }
 
 impl Keyboard {
-    pub fn new(logger: Logger) -> Self {
-        Keyboard { logger, keycode: 0 }
-    }
-
-    pub fn poll(&mut self) -> bool {
-        use crossterm::event::{self, Event, KeyCode, KeyEvent};
-
-        if let Ok(true) = crossterm::event::poll(std::time::Duration::from_millis(100)) {
-            if let Ok(Event::Key(KeyEvent { code, kind, .. })) = event::read() {
-                self.logger.log(Info, &format!("Key event registered: {:?}", code));
-                const IS_CHAR: u8 = 0b0100_0000;
-                let key_code = match code {
-                    KeyCode::Char(c) => {
-                        let c_code = c.to_ascii_uppercase() as u8 - ' ' as u8; // should be between 0 and 64
-                        if c_code < 64 { c_code | IS_CHAR } else { 0 }
-                    }
-                    KeyCode::Up => 0b0000_0100,        // Up arrow
-                    KeyCode::Down => 0b0000_0101,      // Down arrow
-                    KeyCode::Left => 0b0000_0110,      // Left arrow
-                    KeyCode::Right => 0b0000_0111,     // Right arrow
-                    KeyCode::Enter => 0b0000_0001,     // Enter key
-                    KeyCode::Backspace => 0b0000_0010, // Backspace key
-                    KeyCode::Esc => 0b0000_0011,       // Escape key
-                    _ => 0,
-                };
-                if key_code != 0 {
-                    let key_state = if let KeyEventKind::Press = kind {
-                        0b1000_0000 // Key pressed
-                    } else {
-                        0b0000_0000 // Key released
+    pub fn new(logger: Logger, debug: bool) -> Self {
+        let mut keycode = Arc::<RwLock<u8>>::new(RwLock::new(0));
+        let mut kc_clone = keycode.clone();
+        let listening_thread = std::thread::spawn(move || {
+            use crossterm::event::{self, Event, KeyCode, KeyEvent};
+            loop {
+                if let Ok(Event::Key(KeyEvent { code, kind, .. })) = crossterm::event::read() {
+                    // self.logger
+                    //     .log(Info, &format!("Key event registered: {:?}", code));
+                    const IS_CHAR: u8 = 0b0100_0000;
+                    let key_code = match code {
+                        KeyCode::Char(c) => {
+                            let c_code = c.to_ascii_uppercase() as u8 - ' ' as u8; // should be between 0 and 64
+                            if c_code < 64 { c_code | IS_CHAR } else { 0 }
+                        }
+                        KeyCode::Up => 0b0000_0100,    // Up arrow
+                        KeyCode::Down => 0b0000_0101,  // Down arrow
+                        KeyCode::Left => 0b0000_0110,  // Left arrow
+                        KeyCode::Right => 0b0000_0111, // Right arrow
+                        KeyCode::Enter => {
+                            if debug {
+                                0
+                            } else {
+                                0b0000_0001
+                            }
+                        } // Enter key
+                        KeyCode::Backspace => 0b0000_0010, // Backspace key
+                        KeyCode::Esc => 0b0000_0011,   // Escape key
+                        _ => 0,
                     };
+                    if key_code != 0 {
+                        let key_state = if let KeyEventKind::Press = kind {
+                            0b1000_0000 // Key pressed
+                        } else {
+                            0b0000_0000 // Key released
+                        };
 
-                    let keycode = key_code | key_state;
-                    self.keycode = keycode;
-                    return true;
+                        let l_keycode = key_code | key_state;
+                        *keycode.write().unwrap() = l_keycode;
+                    }
                 }
             }
+        });
+        Keyboard {
+            logger,
+            keycode: kc_clone,
+            thread: listening_thread
         }
-        return false; // No key pressed
+    }
+
+    pub fn try_get_keycode(&mut self) -> Result<u8, TryLockError<RwLockReadGuard<'_, u8>>> {
+        self.keycode.try_read().map(|res| *res)
     }
 }
