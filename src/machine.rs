@@ -79,8 +79,8 @@ impl Machine {
     const TEST_MEM_START: usize = 0xF000;
     pub const MEMORY_END: usize = 0xFFFF;
 
-    const DISPLAY_CTRL_ADDR: usize = 0xC000;
-    const DISPLAY_DATA_ADDR: usize = 0xC001;
+    pub const DISPLAY_CTRL_ADDR: usize = 0xC000;
+    pub const DISPLAY_DATA_ADDR: usize = 0xC001;
 
     const ZERO_FLAG: u16 = 0b0001;
     const NEGATIVE_FLAG: u16 = 0b0010;

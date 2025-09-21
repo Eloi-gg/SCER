@@ -155,6 +155,14 @@ impl Display {
         }
     }
 
+    pub fn ctrl_addr(&mut self) -> &mut u8 {
+        &mut self.ctrl
+    }
+
+    pub fn data_addr(&mut self) -> &mut u8 {
+        &mut self.data
+    }
+
     pub fn update(&mut self, emulator: &mut Emulator) {
         if self.ctrl & Self::DISPLAY_ENABLE != 0 {
             self.logger.log(LogLevel::Info, "Display enabled");

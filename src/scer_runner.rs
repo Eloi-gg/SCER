@@ -100,6 +100,9 @@ fn main() {
     emulator.clear_screen();
 
     // TODO : hook display
+    machine.add_peripheral(Machine::DISPLAY_CTRL_ADDR as u16, display.ctrl_addr());
+    machine.add_peripheral(Machine::DISPLAY_DATA_ADDR as u16, display.data_addr());
+
     // TODO remove this
     machine.set_memory(0xF000, 10);
 
