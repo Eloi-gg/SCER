@@ -1,12 +1,13 @@
 use std::env;
 use std::io::{Read, Write};
 
-use machine::Machine;
 use crate::emulator::LogLevel;
+use machine::Machine;
 
 mod emulator;
 mod machine;
 mod program;
+mod ui;
 
 #[derive(argh::FromArgs)]
 /// Scer Runner - A simple SCER program runner
@@ -88,6 +89,12 @@ fn main() {
     let mut buffer = [0u8; 8];
     let _ = std::io::stdin().read(&mut buffer).unwrap();
     clr();
+
+    let (mut app, app_connection) = cgi::Application::new();
+    let ui = ui::ScerUi::new();
+    ui.add_all_layouts(&mut app);
+    app.spawn_debug_window();
+    app.run();
 
     // Initialize emulator and machine
     let logger = emulator::Logger::new();

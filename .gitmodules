@@ -1,0 +1,3 @@
+[submodule "dependencies/cgi"]
+	path = dependencies/cgi
+	url = https://github.com/Eloi-gg/cgi
