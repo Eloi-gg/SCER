@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 argh="0.1.13"
 crossterm = { version = "0.29.0", features = ["event-stream"] }
+cgi = {path= "./dependencies/cgi/cgi"}
 
 [[bin]]
 name = "scer_runner"
