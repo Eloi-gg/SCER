@@ -166,14 +166,12 @@ mod modules {
     }
 
     impl Registers {
-        const NUM_REGISTERS: usize = 10;
+        const NUM_REGISTERS: usize = 8;
         const NUM_SPECIAL_REGISTERS: usize = 2;
 
         pub fn new() -> Self {
-            const NUM_REGISTERS: usize = 8;
-            const NUM_SPECIAL_REGISTERS: usize = 2;
-
-            let mut widgets = Vec::with_capacity((NUM_REGISTERS + NUM_SPECIAL_REGISTERS) * 2);
+            let total_n_reg = Self::NUM_REGISTERS + Self::NUM_SPECIAL_REGISTERS;
+            let mut widgets = Vec::with_capacity(total_n_reg * 2);
 
             let empty_listener = fw::Listener::empty();
 
@@ -196,7 +194,7 @@ mod modules {
                 Widget::new(tb)
             };
 
-            for i in 0..(NUM_REGISTERS + NUM_SPECIAL_REGISTERS) {
+            for i in 0..total_n_reg {
                 let rname = match i {
                     0..3 => &format!("R{}: ", i),
                     3..6 => &format!("A{}: ", i - 3),
@@ -210,7 +208,7 @@ mod modules {
                 widgets.push(register_title_widget);
             }
 
-            for _ in 0..(NUM_REGISTERS + NUM_SPECIAL_REGISTERS) {
+            for _ in 0..total_n_reg {
                 let register_title_widget = register_value_widget_generator();
                 widgets.push(register_title_widget);
             }
@@ -233,8 +231,14 @@ mod modules {
                 .expand_or_shrink(-1, -1)
                 .shift(1, 0)
                 .split(3, 4, true, &mut registers_split);
-            let register_titles_placements = registers_split.iter().map(|p| p.with_width(4));
-            let register_values_placements = registers_split.iter().map(|p| p.shift_top_left(4, 0));
+            let register_titles_placements = registers_split
+                .iter()
+                .map(|p| p.with_width(4))
+                .take(Self::NUM_REGISTERS + Self::NUM_SPECIAL_REGISTERS);
+            let register_values_placements = registers_split
+                .iter()
+                .map(|p| p.shift_top_left(4, 0))
+                .take(Self::NUM_REGISTERS + Self::NUM_SPECIAL_REGISTERS);
 
             let mut iter = self.widgets.iter();
             for p in register_titles_placements {
@@ -280,7 +284,7 @@ mod modules {
             layout: &mut Layout,
         ) {
             layout.connect_and_add_widgets(
-                &mut vec![&self.old_messages, &self.new_messages],
+                vec![&self.old_messages, &self.new_messages],
                 &mut [old_messages_placement, new_messages_placement],
             );
         }
