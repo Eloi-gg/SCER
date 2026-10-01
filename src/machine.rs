@@ -460,6 +460,23 @@ impl Machine {
             unsafe { *(self.memory().add(address as usize) as *const u16) }
         }
     }
+
+    pub fn state(&self) -> MachineState<'_> {
+        MachineState {
+            next_instruction: self.fetch(),
+            registers: [
+                self.r0, self.r1, self.r2, self.a0, self.a1, self.a2, self.z, self.f, self.pc,
+                self.sp,
+            ],
+            memory: &self.memory,
+        }
+    }
+}
+
+pub struct MachineState<'a> {
+    pub next_instruction: u32,
+    pub registers: [u16; 10],
+    pub memory: &'a [u16; 0xFFFF + 1],
 }
 
 impl Debug for Machine {
@@ -528,18 +545,18 @@ mov $a0 0xF000 # Set output address
 mov $r0 123
 push $r0 # register to stack
 push 234 # immediate value to stack
-pop $r1 
+pop $r1
 sw $r1 $a0 # Store popped value to output address
 add $a0 $a0 1 # Increment output address
 push $a0 # Push incremented address to stack
-pop $r1 
+pop $r1
 sw $r1 $a0 # Store popped value to output address
 add $a0 $a0 1 # Increment output address
-pop $r1 
+pop $r1
 sw $r1 $a0 # Store popped value to output address
 add $a0 $a0 1 # Increment output address
 # program end
-mov $a2 0xFF    
+mov $a2 0xFF
 sw  $a2 test_end_address
         ";
 

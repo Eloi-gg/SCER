@@ -1,11 +1,11 @@
 use cgi::factory_widgets as fw;
-use cgi::widget::WidgetBuilder;
+use cgi::widget::{WidgetBuilder, WidgetHdl};
 use cgi::{Layout, Widget, WidgetPlacement};
 
 pub struct ScerUi {
     next_instruction: modules::NextInstruction,
     registers: modules::Registers,
-    screen: modules::Screen,
+    screen: Widget<modules::Screen>,
     message_boards: modules::MessageBoards,
 }
 
@@ -14,7 +14,9 @@ impl ScerUi {
         Self {
             next_instruction: modules::NextInstruction::new(),
             registers: modules::Registers::new(),
-            screen: modules::Screen::new(),
+            screen: WidgetBuilder::new(modules::Screen::new())
+                .with_outline(cgi::symbols::OutlineStyle::Double)
+                .build(),
             message_boards: modules::MessageBoards::new(),
         }
     }
@@ -22,10 +24,26 @@ impl ScerUi {
     pub fn add_all_layouts(&self, app: &mut cgi::application::Application) {
         app.add_layout(0, self.small());
 
-        app.set_layout_behaviour(|size| Self::update(size));
+        app.set_layout_behaviour(|size| Self::update_size(size));
     }
 
-    fn update(size: (u16, u16)) -> u8 {
+    pub fn test(&self) -> WidgetHdl {
+        self.next_instruction.widget.as_hdl()
+    }
+
+    pub fn update(
+        &mut self,
+        machine_state: &crate::machine::MachineState,
+        emulator_screen: &mut Vec<(u16, u16, char)>,
+        old_messages: Vec<&String>,
+        new_messages: Vec<&String>,
+    ) {
+        self.next_instruction.set(machine_state.next_instruction);
+        self.registers.set(machine_state.registers);
+        self.screen.edit().set(emulator_screen);
+    }
+
+    fn update_size(size: (u16, u16)) -> u8 {
         scer_layouts::SMALL_LAYOUT
     }
 
@@ -58,7 +76,7 @@ impl ScerUi {
 
         // Widgets
         let mut layout = Layout::new();
-        layout.add_widget(&self.screen.0, screen_placement);
+        layout.add_widget(&self.screen, screen_placement);
         layout.add_widget(&self.next_instruction.widget, next_instruction_placement);
         self.registers
             .add_to_layout(registers_placement, &mut layout);
@@ -91,13 +109,15 @@ mod modules {
 
     type TbWidget = Widget<fw::text::TextBox>;
 
-    pub(super) struct Screen(pub Widget<fw::utils::Empty>);
+    pub struct Screen(pub(super) Vec<(u16, u16, char)>);
+
     pub(super) struct NextInstruction {
         pub widget: TbWidget,
         last_instruction: u32,
     }
     pub(super) struct Registers {
         pub widgets: Vec<TbWidget>,
+        has_changed: u16,
         outline: Widget<fw::utils::Empty>,
         registers: [u16; Self::NUM_REGISTERS + Self::NUM_SPECIAL_REGISTERS],
     }
@@ -129,13 +149,18 @@ mod modules {
 
     impl Screen {
         pub(super) fn new() -> Self {
-            Self(
-                WidgetBuilder::new(fw::utils::Empty)
-                    .with_outline(cgi::symbols::OutlineStyle::Double)
-                    .build(),
-            )
+            Self(Vec::new())
+        }
+
+        pub(crate) fn set(&mut self, changed_chars: &mut Vec<(u16, u16, char)>) {
+            self.0.append(changed_chars);
+            if !changed_chars.is_empty() {
+                crate::console_println("ADDED CHARS");
+            }
+            changed_chars.clear();
         }
     }
+
     impl NextInstruction {
         pub(super) fn new() -> Self {
             let empty_listener = fw::Listener::empty();
@@ -161,7 +186,7 @@ mod modules {
             let decoded_instruction = crate::program::Instruction::from_binary(instruction);
             self.widget //TODO: we dont need all 32 bits!
                 .edit()
-                .set_text(&format!("{:#034b}\n{:?}", instruction, decoded_instruction));
+                .set_text(&format!("{:#024b}\n{:?}", instruction, decoded_instruction));
         }
     }
 
@@ -184,9 +209,9 @@ mod modules {
                 Widget::new(tb)
             };
             let register_value_widget_generator = || {
-                let rand = 0xFFFF;
+                let n = 0x0000;
                 let tb = fw::text::TextBox::new(
-                    &format!("0x{:04X}", rand),
+                    &format!("0x{:04X}", n),
                     empty_listener.clone(),
                     fw::text::TextAlign::Left,
                 );
@@ -222,6 +247,7 @@ mod modules {
                 widgets,
                 outline,
                 registers: [0; _],
+                has_changed: 0,
             }
         }
 
@@ -249,6 +275,31 @@ mod modules {
             }
 
             layout.add_widget(&self.outline, placement);
+        }
+
+        pub fn set(&mut self, registers: [u16; 10]) {
+            for (i, widget) in self
+                .widgets
+                .iter()
+                .skip(Self::NUM_REGISTERS + Self::NUM_SPECIAL_REGISTERS)
+                .enumerate()
+            {
+                let value = registers[i];
+                let old_value = self.registers[i];
+                if value != old_value {
+                    // Always display register values with 4 hex digits
+                    let mut e = widget.edit();
+                    e.set_text(&format!("{:#06x}", value));
+                    e.set_style(styles::CHANGED);
+                    self.has_changed |= 1 << i;
+                } else if self.has_changed & (1 << i) != 0 {
+                    let mut e = widget.edit();
+                    e.set_text(&format!("{:#06x}", value));
+                    e.set_style(styles::NORMAL);
+                    self.has_changed &= !(1 << i);
+                }
+                self.registers[i] = value;
+            }
         }
     }
 
@@ -288,5 +339,34 @@ mod modules {
                 &mut [old_messages_placement, new_messages_placement],
             );
         }
+    }
+}
+
+impl cgi::Displayable for modules::Screen {
+    fn display(&self) {
+        todo!()
+    }
+
+    fn name(&self) -> String {
+        todo!()
+    }
+
+    fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        std::borrow::Cow::Borrowed(&mut self.0)
+    }
+
+    fn get_style(&self) -> Option<cgi::text_formatting::CombinedFormat> {
+        Some(styles::screen())
+    }
+}
+
+mod styles {
+    use cgi::text_formatting::{CombinedFormat, Format, attributes::*, colors::*};
+
+    pub const NORMAL: Format = GREY;
+    pub const CHANGED: Format = DARKYELLOW;
+
+    pub fn screen() -> CombinedFormat {
+        GREEN | DIM
     }
 }

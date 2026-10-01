@@ -20,6 +20,7 @@ impl Logger {
     }
 }
 
+//TODO: delete
 pub struct Emulator {
     screen: String,
     screen_modified: bool,
@@ -27,6 +28,7 @@ pub struct Emulator {
     screen_width: u8,
     screen_height: u8,
     logger: Logger,
+    set_chars: Vec<(u16, u16, char)>,
 }
 
 pub(crate) enum LogLevel {
@@ -39,9 +41,12 @@ use std::cell::RefCell;
 use std::{ptr::NonNull, rc::Rc};
 
 use LogLevel::*;
+use cgi::{KeyCode};
 use crossterm::event::KeyEventKind;
 
 impl Emulator {
+    const SCREEN_MARGIN: usize = 1;
+
     pub(super) fn new(width: u8, height: u8, logger: Logger) -> Self {
         Emulator {
             screen_modified: false,
@@ -50,11 +55,13 @@ impl Emulator {
             screen: String::new(),
             text: vec![' '.to_ascii_lowercase() as u8; (width * height) as usize],
             logger,
+            set_chars: Vec::new(),
         }
     }
 
+    // TODO: remove
     pub(super) fn screen(&mut self) -> &str {
-        if self.screen_modified {
+        if !self.set_chars.is_empty() {
             let mut screen_lines = self
                 .screen
                 .lines()
@@ -62,14 +69,16 @@ impl Emulator {
                 .collect::<Vec<_>>();
 
             for text_line_idx in 0..self.screen_height {
-                let text_line = &self.text[text_line_idx as usize * self.screen_width as usize
-                    ..(text_line_idx + 1) as usize * self.screen_width as usize];
-                let mut screen_line = String::from("║  ");
+                let slice_start = (text_line_idx * self.screen_width) as usize;
+                let slice_end = ((text_line_idx + 1) * self.screen_width) as usize;
+                let text_line = &self.text[slice_start..slice_end];
+
+                let mut screen_line = String::from(&" ".repeat(Self::SCREEN_MARGIN));
                 for i in 0..self.screen_width {
                     let c = text_line[i as usize] as char;
                     screen_line.push(c);
                 }
-                screen_line.push_str("  ║");
+                screen_line.push_str(&" ".repeat(Self::SCREEN_MARGIN));
                 screen_lines[(text_line_idx + 1) as usize] = screen_line;
             }
 
@@ -82,28 +91,25 @@ impl Emulator {
     }
 
     pub fn clear_screen(&mut self) {
-        let top_border = "╔".to_owned()
-            + &String::from_iter(std::iter::repeat('═').take(4 + self.screen_width as usize))
-            + "╗";
-        let bottom_border = "╚".to_owned()
-            + &String::from_iter(std::iter::repeat('═').take(4 + self.screen_width as usize))
-            + "╝";
-        let line = String::from("║")
-            + &String::from_iter(std::iter::repeat(' ').take(4 + self.screen_width as usize))
-            + "║";
+        let line = " ".repeat(2 * Self::SCREEN_MARGIN + self.screen_width as usize);
 
         self.screen.clear();
-        self.screen.push_str(&top_border);
-        self.screen.push('\n');
+        for _ in 0..Self::SCREEN_MARGIN {
+            self.screen.push_str(&line);
+            self.screen.push('\n');
+        }
         for _ in 0..self.screen_height {
             self.screen.push_str(&line);
             self.screen.push('\n');
         }
-        self.screen.push_str(&bottom_border);
-        self.screen.push('\n');
+        for _ in 0..Self::SCREEN_MARGIN {
+            self.screen.push_str(&line);
+            self.screen.push('\n');
+        }
 
         self.text =
             vec![' '.to_ascii_lowercase() as u8; (self.screen_width * self.screen_height) as usize];
+        self.set_chars.clear();
     }
 
     pub fn set_char(&mut self, x: u8, y: u8, c: char) {
@@ -115,14 +121,43 @@ impl Emulator {
             self.logger.log(Error, "Character is not ASCII");
             return;
         }
-        self.text[(y as usize * self.screen_width as usize + x as usize) as usize] = c as u8;
-        let text = self.text.iter().map(|&b| b as char).collect::<String>();
-        self.logger
-            .log(Info, &format!("Setting character {} at ({}, {})", c, x, y));
-        self.logger
-            .log(Info, &format!("Current text in emulator: {}", text));
-        self.screen_modified = true;
+        self.set_chars.push((x as u16, y as u16, c));
     }
+
+    pub fn get_keycode(&self, code: KeyCode, kind: KeyEventKind) -> u8 {
+            const IS_CHAR: u8 = 0b0100_0000;
+            let key_code = match code {
+                KeyCode::Char(c) => {
+                    let c_code = c.to_ascii_uppercase() as u8 - ' ' as u8; // should be between 0 and 64
+                    if c_code < 64 { c_code | IS_CHAR } else { 0 }
+                }
+                KeyCode::Up => 0b0000_0100,    // Up arrow
+                KeyCode::Down => 0b0000_0101,  // Down arrow
+                KeyCode::Left => 0b0000_0110,  // Left arrow
+                KeyCode::Right => 0b0000_0111, // Right arrow
+                KeyCode::Enter => 0b0000_0001, // Enter key
+                KeyCode::Backspace => 0b0000_0010, // Backspace key
+                KeyCode::Esc => 0b0000_0011,   // Escape key
+                _ => 0,
+            };
+            if key_code != 0 {
+                let key_state = if let KeyEventKind::Press = kind {
+                    0b1000_0000 // Key pressed
+                } else {
+                    0b0000_0000 // Key released
+                };
+
+                let l_keycode = key_code | key_state;
+                l_keycode
+            } else {
+                0
+            }
+        }
+
+    pub fn set_chars(&mut self) -> &mut Vec<(u16, u16, char)> {
+        &mut self.set_chars
+    }
+
 }
 
 pub struct Display {
@@ -165,6 +200,7 @@ impl Display {
 
     pub fn update(&mut self, emulator: &mut Emulator) {
         if self.ctrl & Self::DISPLAY_ENABLE != 0 {
+            crate::console_println("DISPLAY ENABLED");
             self.logger.log(LogLevel::Info, "Display enabled");
             if self.ctrl & Self::DISPLAY_WRITE != 0 {
                 let (x, y) = self.cursor_position;
@@ -203,70 +239,5 @@ impl Display {
                 );
             }
         }
-    }
-}
-
-use std::sync::*;
-use std::thread::JoinHandle;
-
-pub struct Keyboard {
-    logger: Logger,
-    keycode: Arc<RwLock<u8>>,
-    thread: JoinHandle<()>
-}
-
-impl Keyboard {
-    pub fn new(logger: Logger, debug: bool) -> Self {
-        let mut keycode = Arc::<RwLock<u8>>::new(RwLock::new(0));
-        let mut kc_clone = keycode.clone();
-        let listening_thread = std::thread::spawn(move || {
-            use crossterm::event::{self, Event, KeyCode, KeyEvent};
-            loop {
-                if let Ok(Event::Key(KeyEvent { code, kind, .. })) = crossterm::event::read() {
-                    // self.logger
-                    //     .log(Info, &format!("Key event registered: {:?}", code));
-                    const IS_CHAR: u8 = 0b0100_0000;
-                    let key_code = match code {
-                        KeyCode::Char(c) => {
-                            let c_code = c.to_ascii_uppercase() as u8 - ' ' as u8; // should be between 0 and 64
-                            if c_code < 64 { c_code | IS_CHAR } else { 0 }
-                        }
-                        KeyCode::Up => 0b0000_0100,    // Up arrow
-                        KeyCode::Down => 0b0000_0101,  // Down arrow
-                        KeyCode::Left => 0b0000_0110,  // Left arrow
-                        KeyCode::Right => 0b0000_0111, // Right arrow
-                        KeyCode::Enter => {
-                            if debug {
-                                0
-                            } else {
-                                0b0000_0001
-                            }
-                        } // Enter key
-                        KeyCode::Backspace => 0b0000_0010, // Backspace key
-                        KeyCode::Esc => 0b0000_0011,   // Escape key
-                        _ => 0,
-                    };
-                    if key_code != 0 {
-                        let key_state = if let KeyEventKind::Press = kind {
-                            0b1000_0000 // Key pressed
-                        } else {
-                            0b0000_0000 // Key released
-                        };
-
-                        let l_keycode = key_code | key_state;
-                        *keycode.write().unwrap() = l_keycode;
-                    }
-                }
-            }
-        });
-        Keyboard {
-            logger,
-            keycode: kc_clone,
-            thread: listening_thread
-        }
-    }
-
-    pub fn try_get_keycode(&mut self) -> Result<u8, TryLockError<RwLockReadGuard<'_, u8>>> {
-        self.keycode.try_read().map(|res| *res)
     }
 }
