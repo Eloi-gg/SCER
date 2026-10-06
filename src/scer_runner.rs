@@ -171,7 +171,7 @@ fn main() {
                 .collect::<Vec<_>>();
             *last_num_msg = log_len;
 
-            ui.update(&machine.state(), emulator.set_chars(), old_messages, new_messages);
+            ui.update(&machine.state(), emulator.set_chars(), new_messages);
             app_connection.send_action(cgi::Action::RedrawAll);
             //TODO: link to UI
         };

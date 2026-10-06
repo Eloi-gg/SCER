@@ -35,12 +35,12 @@ impl ScerUi {
         &mut self,
         machine_state: &crate::machine::MachineState,
         emulator_screen: &mut Vec<(u16, u16, char)>,
-        old_messages: Vec<&String>,
         new_messages: Vec<&String>,
     ) {
         self.next_instruction.set(machine_state.next_instruction);
         self.registers.set(machine_state.registers);
         self.screen.edit().set(emulator_screen);
+        self.message_boards.set(new_messages);
     }
 
     fn update_size(size: (u16, u16)) -> u8 {
@@ -144,6 +144,22 @@ mod modules {
             let old_text = edit.text();
             let next_text = message.to_owned() + "\n" + &old_text;
             edit.set_text(&next_text);
+        }
+
+        pub(super) fn drain_messages(widget: &mut TbWidget) -> Vec<String> {
+            let mut edit = widget.edit();
+            let old_text = edit.text();
+            edit.set_text("");
+            old_text
+                .lines()
+                .filter_map(|l| {
+                    if l.trim().is_empty() {
+                        None
+                    } else {
+                        Some(l.to_owned())
+                    }
+                })
+                .collect()
         }
     }
 
@@ -315,13 +331,6 @@ mod modules {
                 .set_style(attributes::DIM | attributes::ITALIC);
             new_messages.edit().set_style(attributes::ITALIC);
 
-            for i in 0..3 {
-                msg_board::add_message(&mut new_messages, &format!("NEW {}", i));
-            }
-            for i in 0..14 {
-                msg_board::add_message(&mut old_messages, &format!("OLD {}", i));
-            }
-
             Self {
                 old_messages,
                 new_messages,
@@ -339,6 +348,16 @@ mod modules {
                 &mut [old_messages_placement, new_messages_placement],
             );
         }
+
+        pub fn set(&mut self, new_messages: Vec<&String>) {
+            let old_messages = msg_board::drain_messages(&mut self.new_messages);
+            for old_msg in old_messages {
+                msg_board::add_message(&mut self.old_messages, &old_msg);
+            }
+            for new_msg in new_messages {
+                msg_board::add_message(&mut self.new_messages, new_msg);
+            }
+        }
     }
 }
 
@@ -351,8 +370,8 @@ impl cgi::Displayable for modules::Screen {
         todo!()
     }
 
-    fn get_changed_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
-        std::borrow::Cow::Borrowed(&mut self.0)
+    fn get_chars(&mut self, size: (u16, u16)) -> std::borrow::Cow<'_, [(u16, u16, char)]> {
+        std::borrow::Cow::Borrowed(&self.0)
     }
 
     fn get_style(&self) -> Option<cgi::text_formatting::CombinedFormat> {

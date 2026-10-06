@@ -18,6 +18,10 @@ impl Logger {
     pub(super) fn get_logs(&self) -> std::cell::Ref<'_, Vec<String>> {
         self.0.borrow()
     }
+
+    pub fn clear_logs(&mut self) {
+        self.0.borrow_mut().clear();
+    }
 }
 
 //TODO: delete
@@ -113,6 +117,7 @@ impl Emulator {
     }
 
     pub fn set_char(&mut self, x: u8, y: u8, c: char) {
+        let x = x + Self::SCREEN_MARGIN as u8;
         if x >= self.screen_width || y >= self.screen_height {
             self.logger.log(Error, "Coordinates out of bounds");
             return;
